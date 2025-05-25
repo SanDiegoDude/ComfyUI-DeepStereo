@@ -205,7 +205,7 @@ class InputToTextureTransformer:
         return {
             "required": {
                 "image": ("IMAGE",),
-                "hex_color": ("STRING", {"default": "#0000FF", "tooltip": "Hex color (e.g., #FF0000 or FF0000)"}),
+                "hex_color": ("STRING", {"default": "0000FF", "tooltip": "Hex color (6 digits, # optional)"}),
             },
             "optional": {
                 "darken_factor": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 1.0, "step": 0.05, 
@@ -224,40 +224,38 @@ class InputToTextureTransformer:
     def transform_to_texture(self, image, hex_color, darken_factor=0.3, blur_radius=5, blend_strength=0.5):
         # Convert ComfyUI tensor to PIL Image
         if len(image.shape) == 4:
-            image = image[0]  # Take first image if batch
+            image = image[0]
         
         img_np = (image.cpu().numpy() * 255).astype(np.uint8)
         img_pil = Image.fromarray(img_np, 'RGB')
         
-        # Parse hex color
+        # Parse hex color (accept with or without #)
         try:
-            if not hex_color.startswith('#'):
-                hex_color = '#' + hex_color
-            target_color = ImageColor.getrgb(hex_color)
+            hex_clean = hex_color.replace("#", "")
+            if len(hex_clean) == 3:
+                hex_clean = ''.join([c*2 for c in hex_clean])
+            elif len(hex_clean) != 6:
+                hex_clean = "000080"  # Default dark blue
+            
+            target_color = tuple(int(hex_clean[i:i+2], 16) for i in (0, 2, 4))
         except ValueError:
-            print(f"Warning: Invalid hex color '{hex_color}'. Using dark blue (#000080).")
+            print(f"Warning: Invalid hex color '{hex_color}'. Using dark blue.")
             target_color = (0, 0, 128)
         
-        # Convert to RGB if needed
+        # Rest of the function stays the same...
         working_img = img_pil.convert('RGB')
-        
-        # Create a solid color overlay
         color_overlay = Image.new('RGB', working_img.size, target_color)
-        
-        # Blend using overlay mode
         result_img = Image.blend(working_img, color_overlay, blend_strength)
         
-        # Apply subtle darkening
         if darken_factor < 1.0:
+            from PIL import ImageEnhance
             result_img = ImageEnhance.Brightness(result_img).enhance(darken_factor)
         
-        # Apply blur
         if blur_radius > 0:
             result_img = result_img.filter(ImageFilter.GaussianBlur(radius=blur_radius))
         
-        # Convert back to ComfyUI tensor
         result_np = np.array(result_img)
         result_tensor = torch.from_numpy(result_np).float() / 255.0
-        result_tensor = result_tensor.unsqueeze(0)  # Add batch dimension
+        result_tensor = result_tensor.unsqueeze(0)
         
         return (result_tensor,)

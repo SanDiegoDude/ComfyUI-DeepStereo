@@ -229,6 +229,7 @@ class ColorPickerNode:
         
         return (hex_color, r, g, b)
 
+
 class DepthMapProcessor:
     """Process and modify depth maps"""
     
@@ -392,54 +393,3 @@ class RandomNoiseGenerator:
         result_tensor = result_tensor.unsqueeze(0)
         
         return (result_tensor,)
-
-
-class BatchImageProcessor:
-    """Process multiple images in a batch with the same settings"""
-    
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "images": ("IMAGE",),
-                "operation": (["resize", "rotate", "flip_horizontal", "flip_vertical"], {"default": "resize"}),
-            },
-            "optional": {
-                "target_width": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 1}),
-                "target_height": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 1}),
-                "rotation_degrees": ("INT", {"default": 90, "min": 0, "max": 359, "step": 1}),
-            }
-        }
-
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("processed_images",)
-    FUNCTION = "process_batch"
-    CATEGORY = "DeepStereo/Utility"
-
-    def process_batch(self, images, operation, target_width=512, target_height=512, rotation_degrees=90):
-        processed_images = []
-        
-        # Process each image in the batch
-        for i in range(images.shape[0]):
-            img_tensor = images[i]
-            img_np = (img_tensor.cpu().numpy() * 255).astype(np.uint8)
-            img_pil = Image.fromarray(img_np, 'RGB')
-            
-            if operation == "resize":
-                img_pil = img_pil.resize((target_width, target_height), Image.Resampling.LANCZOS)
-            elif operation == "rotate":
-                img_pil = img_pil.rotate(rotation_degrees, expand=True)
-            elif operation == "flip_horizontal":
-                img_pil = img_pil.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
-            elif operation == "flip_vertical":
-                img_pil = img_pil.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
-            
-            # Convert back to tensor
-            result_np = np.array(img_pil)
-            result_tensor = torch.from_numpy(result_np).float() / 255.0
-            processed_images.append(result_tensor)
-        
-        # Stack back into batch format
-        batch_tensor = torch.stack(processed_images, dim=0)
-        
-        return (batch_tensor,)

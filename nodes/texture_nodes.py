@@ -6,17 +6,13 @@ import math
 from tqdm import tqdm
 import os
 
-# Import deeptexture functions directly - we'll copy them into this module
-# This avoids import path issues in ComfyUI
+# Import deeptexture functions from our local module
 from .deeptexture_functions import (
     parse_color, 
     get_pixel_value_safe, 
     resize_to_megapixels,
     generate_texture_from_config
 )
-# Add the parent directory to sys.path to import deeptexture
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import deeptexture
 
 class ProceduralTextureGenerator:
     """Node for generating procedural textures using the deeptexture methods"""

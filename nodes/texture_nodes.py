@@ -94,8 +94,8 @@ class ProceduralTextureGenerator:
         
         args = TextureArgs()
         
-        # Generate texture using deeptexture
-        result_pil = deeptexture.generate_texture_from_config(img_pil, args, verbose=False)
+        # Generate texture using deeptexture functions
+        result_pil = generate_texture_from_config(img_pil, args, verbose=False)
         
         # Convert back to ComfyUI tensor
         result_np = np.array(result_pil)
@@ -208,8 +208,8 @@ class InputToTextureTransformer:
                 "hex_color": ("STRING", {"default": "0000FF", "tooltip": "Hex color (6 digits, # optional)"}),
             },
             "optional": {
-                "darken_factor": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 1.0, "step": 0.05, 
-                                          "tooltip": "0.0 = black, 1.0 = no change"}),
+                "darken_amount": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05, 
+                                          "tooltip": "0.0 = no darkening, 1.0 = maximum darkening"}),
                 "blur_radius": ("INT", {"default": 5, "min": 0, "max": 50, "step": 1}),
                 "blend_strength": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05, 
                                            "tooltip": "Color overlay strength"}),
@@ -221,7 +221,7 @@ class InputToTextureTransformer:
     FUNCTION = "transform_to_texture"
     CATEGORY = "DeepStereo/Texture"
 
-    def transform_to_texture(self, image, hex_color, darken_factor=0.3, blur_radius=5, blend_strength=0.5):
+    def transform_to_texture(self, image, hex_color, darken_amount=0.0, blur_radius=5, blend_strength=0.5):
         # Convert ComfyUI tensor to PIL Image
         if len(image.shape) == 4:
             image = image[0]
@@ -242,18 +242,26 @@ class InputToTextureTransformer:
             print(f"Warning: Invalid hex color '{hex_color}'. Using dark blue.")
             target_color = (0, 0, 128)
         
-        # Rest of the function stays the same...
+        # Convert to RGB if needed
         working_img = img_pil.convert('RGB')
+        
+        # Create a solid color overlay
         color_overlay = Image.new('RGB', working_img.size, target_color)
+        
+        # Blend using overlay mode
         result_img = Image.blend(working_img, color_overlay, blend_strength)
         
-        if darken_factor < 1.0:
-            from PIL import ImageEnhance
-            result_img = ImageEnhance.Brightness(result_img).enhance(darken_factor)
+        # Apply darkening if requested (0.0 = no change, 1.0 = maximum darkening)
+        if darken_amount > 0.0:
+            # Convert darken_amount to brightness factor (1.0 = no change, 0.0 = black)
+            brightness_factor = 1.0 - darken_amount
+            result_img = ImageEnhance.Brightness(result_img).enhance(brightness_factor)
         
+        # Apply blur
         if blur_radius > 0:
             result_img = result_img.filter(ImageFilter.GaussianBlur(radius=blur_radius))
         
+        # Convert back to ComfyUI tensor
         result_np = np.array(result_img)
         result_tensor = torch.from_numpy(result_np).float() / 255.0
         result_tensor = result_tensor.unsqueeze(0)

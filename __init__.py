@@ -18,7 +18,7 @@ except Exception as e:
     print(f"✗ Stereogram nodes failed: {e}")
 
 try:
-    from .nodes.utility_nodes import ImageResizer, DepthMapProcessor, RandomNoiseGenerator, BatchImageProcessor
+    from .nodes.utility_nodes import ImageResizeAndTransform, DepthMapProcessor, RandomNoiseGenerator, ColorPickerNode
     print("✓ Utility nodes loaded")
 except Exception as e:
     print(f"✗ Utility nodes failed: {e}")
@@ -37,10 +37,10 @@ NODE_CLASS_MAPPINGS = {
     "InputToTextureTransformer": InputToTextureTransformer,
     "StereogramGenerator": StereogramGenerator,
     "RandomDotStereogramGenerator": RandomDotStereogramGenerator,
-    "ImageResizer": ImageResizer,
+    "ImageResizeAndTransform": ImageResizeAndTransform,
     "DepthMapProcessor": DepthMapProcessor,
     "RandomNoiseGenerator": RandomNoiseGenerator,
-    "BatchImageProcessor": BatchImageProcessor,
+    "ColorPickerNode": ColorPickerNode,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -50,10 +50,10 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "InputToTextureTransformer": "DeepStereo: Input to Texture",
     "StereogramGenerator": "DeepStereo: Stereogram Generator",
     "RandomDotStereogramGenerator": "DeepStereo: Random Dot Stereogram",
-    "ImageResizer": "DeepStereo: Image Resizer",
+    "ImageResizeAndTransform": "DeepStereo: Image Resize and Transform",
     "DepthMapProcessor": "DeepStereo: Depth Map Processor",
     "RandomNoiseGenerator": "DeepStereo: Random Noise Generator",
-    "BatchImageProcessor": "DeepStereo: Batch Image Processor",
+    "ColorPickerNode": "DeepStereo: Color Picker",
 }
 
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']

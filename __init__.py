@@ -44,16 +44,16 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "MiDaSDepthEstimator": "MiDaS Depth Estimator",
-    "ProceduralTextureGenerator": "Procedural Texture Generator",
-    "TextureTransformer": "Texture Transformer",
-    "InputToTextureTransformer": "Input to Texture",
-    "StereogramGenerator": "Stereogram Generator",
-    "RandomDotStereogramGenerator": "Random Dot Stereogram",
-    "ImageResizer": "Image Resizer",
-    "DepthMapProcessor": "Depth Map Processor",
-    "RandomNoiseGenerator": "Random Noise Generator",
-    "BatchImageProcessor": "Batch Image Processor",
+    "MiDaSDepthEstimator": "DeepStereo: MiDaS Depth Estimator",
+    "ProceduralTextureGenerator": "DeepStereo: Procedural Texture Generator",
+    "TextureTransformer": "DeepStereo: Texture Transformer", 
+    "InputToTextureTransformer": "DeepStereo: Input to Texture",
+    "StereogramGenerator": "DeepStereo: Stereogram Generator",
+    "RandomDotStereogramGenerator": "DeepStereo: Random Dot Stereogram",
+    "ImageResizer": "DeepStereo: Image Resizer",
+    "DepthMapProcessor": "DeepStereo: Depth Map Processor",
+    "RandomNoiseGenerator": "DeepStereo: Random Noise Generator",
+    "BatchImageProcessor": "DeepStereo: Batch Image Processor",
 }
 
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']

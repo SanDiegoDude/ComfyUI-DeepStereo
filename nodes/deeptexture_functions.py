@@ -178,7 +178,6 @@ def blend_images(base_image, blend_image, mode="average", opacity=1.0):
         return final_blend
     return result_rgb
 
-# --- Core Texture Generation Function (for import) ---
 def generate_texture_from_config(base_image_pil, texture_generation_args, verbose=True):
     """
     Core texture generation logic, callable for import.
@@ -196,22 +195,50 @@ def generate_texture_from_config(base_image_pil, texture_generation_args, verbos
     if getattr(texture_generation_args, 'tex_method1_color_dots', False):
         methods_to_apply_info.append({
             'name_suffix': "_m1", 'description': "Texture Method 1: Color Dots",
-            'func': lambda img_in: apply_method1_color_dots(img_in, texture_generation_args.tex_m1_density, texture_generation_args.tex_m1_dot_size, parse_color(texture_generation_args.tex_m1_bg_color), texture_generation_args.tex_m1_color_mode, texture_generation_args.tex_m1_hue_shift_degrees)
+            # Fixed: Don't call parse_color on tex_m1_bg_color since it's already an RGB tuple
+            'func': lambda img_in: apply_method1_color_dots(
+                img_in, 
+                texture_generation_args.tex_m1_density, 
+                texture_generation_args.tex_m1_dot_size, 
+                texture_generation_args.tex_m1_bg_color,  # Already an RGB tuple, no parse_color needed
+                texture_generation_args.tex_m1_color_mode, 
+                texture_generation_args.tex_m1_hue_shift_degrees
+            )
         })
     if getattr(texture_generation_args, 'tex_method2_density_size', False):
         methods_to_apply_info.append({
             'name_suffix': "_m2", 'description': f"Texture Method 2: {texture_generation_args.tex_m2_mode.capitalize()}",
-            'func': lambda img_in: apply_method2_density_size(img_in, texture_generation_args.tex_m2_mode, parse_color(texture_generation_args.tex_m2_element_color), parse_color(texture_generation_args.tex_m2_bg_color), texture_generation_args.tex_m2_base_size, texture_generation_args.tex_m2_max_size, texture_generation_args.tex_m2_invert_influence, texture_generation_args.tex_m2_density_factor)
+            'func': lambda img_in: apply_method2_density_size(
+                img_in, 
+                texture_generation_args.tex_m2_mode, 
+                parse_color(texture_generation_args.tex_m2_element_color), 
+                parse_color(texture_generation_args.tex_m2_bg_color), 
+                texture_generation_args.tex_m2_base_size, 
+                texture_generation_args.tex_m2_max_size, 
+                texture_generation_args.tex_m2_invert_influence, 
+                texture_generation_args.tex_m2_density_factor
+            )
         })
     if getattr(texture_generation_args, 'tex_method3_voronoi', False):
         methods_to_apply_info.append({
             'name_suffix': "_m3", 'description': "Texture Method 3: Voronoi",
-            'func': lambda img_in: apply_method3_voronoi(img_in, texture_generation_args.tex_m3_num_points, texture_generation_args.tex_m3_metric, texture_generation_args.tex_m3_color_source)
+            'func': lambda img_in: apply_method3_voronoi(
+                img_in, 
+                texture_generation_args.tex_m3_num_points, 
+                texture_generation_args.tex_m3_metric, 
+                texture_generation_args.tex_m3_color_source
+            )
         })
     if getattr(texture_generation_args, 'tex_method4_glyph_dither', False):
         methods_to_apply_info.append({
             'name_suffix': "_m4", 'description': "Texture Method 4: Glyph Dither",
-            'func': lambda img_in: apply_method4_glyph_dither(img_in, texture_generation_args.tex_m4_num_colors, texture_generation_args.tex_m4_glyph_size, texture_generation_args.tex_m4_glyph_style, texture_generation_args.tex_m4_use_quantized_color_for_glyph_element)
+            'func': lambda img_in: apply_method4_glyph_dither(
+                img_in, 
+                texture_generation_args.tex_m4_num_colors, 
+                texture_generation_args.tex_m4_glyph_size, 
+                texture_generation_args.tex_m4_glyph_style, 
+                texture_generation_args.tex_m4_use_quantized_color_for_glyph_element
+            )
         })
 
     if not methods_to_apply_info:
@@ -239,7 +266,8 @@ def generate_texture_from_config(base_image_pil, texture_generation_args, verbos
             method_output = method_info['func'](image_for_texture_gen.copy())
             individual_method_outputs.append(method_output)
 
-        if not individual_method_outputs: final_texture_image = image_for_texture_gen.copy()
+        if not individual_method_outputs: 
+            final_texture_image = image_for_texture_gen.copy()
         else:
             final_texture_image = individual_method_outputs[0]
             if len(individual_method_outputs) > 1:
@@ -247,6 +275,7 @@ def generate_texture_from_config(base_image_pil, texture_generation_args, verbos
                     if verbose: print(f"Texture Gen: Blending current result with output of next method using '{blend_type}'...")
                     final_texture_image = blend_images(final_texture_image, individual_method_outputs[i], mode=blend_type, opacity=blend_opacity)
     
-    if final_texture_image is None: final_texture_image = image_for_texture_gen.copy()
+    if final_texture_image is None: 
+        final_texture_image = image_for_texture_gen.copy()
     if verbose: print("--- On-the-fly Texture Generation Complete ---")
     return final_texture_image

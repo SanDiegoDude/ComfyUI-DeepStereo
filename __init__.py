@@ -1,8 +1,34 @@
-from .nodes.depth_nodes import MiDaSDepthEstimator
-from .nodes.texture_nodes import ProceduralTextureGenerator, TextureTransformer, InputToTextureTransformer
-from .nodes.stereogram_nodes import StereogramGenerator, RandomDotStereogramGenerator
-from .nodes.utility_nodes import ImageResizer, DepthMapProcessor, RandomNoiseGenerator, BatchImageProcessor
-from .nodes.advanced_texture_nodes import AdvancedTextureMethod2, AdvancedTextureMethod3, TextureBlender, TextureTiler
+# Start with just basic nodes to identify the issue
+try:
+    from .nodes.depth_nodes import MiDaSDepthEstimator
+    print("✓ Depth nodes loaded")
+except Exception as e:
+    print(f"✗ Depth nodes failed: {e}")
+
+try:
+    from .nodes.texture_nodes import ProceduralTextureGenerator, TextureTransformer, InputToTextureTransformer
+    print("✓ Texture nodes loaded")
+except Exception as e:
+    print(f"✗ Texture nodes failed: {e}")
+
+try:
+    from .nodes.stereogram_nodes import StereogramGenerator, RandomDotStereogramGenerator
+    print("✓ Stereogram nodes loaded")
+except Exception as e:
+    print(f"✗ Stereogram nodes failed: {e}")
+
+try:
+    from .nodes.utility_nodes import ImageResizer, DepthMapProcessor, RandomNoiseGenerator, BatchImageProcessor
+    print("✓ Utility nodes loaded")
+except Exception as e:
+    print(f"✗ Utility nodes failed: {e}")
+
+# Comment out advanced nodes for now
+# try:
+#     from .nodes.advanced_texture_nodes import AdvancedTextureMethod2, AdvancedTextureMethod3, TextureBlender, TextureTiler
+#     print("✓ Advanced texture nodes loaded")
+# except Exception as e:
+#     print(f"✗ Advanced texture nodes failed: {e}")
 
 NODE_CLASS_MAPPINGS = {
     "MiDaSDepthEstimator": MiDaSDepthEstimator,
@@ -15,10 +41,6 @@ NODE_CLASS_MAPPINGS = {
     "DepthMapProcessor": DepthMapProcessor,
     "RandomNoiseGenerator": RandomNoiseGenerator,
     "BatchImageProcessor": BatchImageProcessor,
-    "AdvancedTextureMethod2": AdvancedTextureMethod2,
-    "AdvancedTextureMethod3": AdvancedTextureMethod3,
-    "TextureBlender": TextureBlender,
-    "TextureTiler": TextureTiler,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -32,10 +54,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "DepthMapProcessor": "Depth Map Processor",
     "RandomNoiseGenerator": "Random Noise Generator",
     "BatchImageProcessor": "Batch Image Processor",
-    "AdvancedTextureMethod2": "Advanced Texture Method 2",
-    "AdvancedTextureMethod3": "Advanced Texture Method 3", 
-    "TextureBlender": "Texture Blender",
-    "TextureTiler": "Texture Tiler",
 }
 
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']

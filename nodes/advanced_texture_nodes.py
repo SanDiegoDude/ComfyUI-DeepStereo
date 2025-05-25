@@ -13,11 +13,6 @@ from .deeptexture_functions import (
     blend_images
 )
 
-
-# Add the parent directory to sys.path to import deeptexture
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import deeptexture
-
 class AdvancedTextureMethod2:
     """Density/Size driven texture generation (Method 2)"""
     

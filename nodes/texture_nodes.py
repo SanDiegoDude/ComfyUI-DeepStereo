@@ -129,6 +129,8 @@ class TextureTransformer:
             },
             "optional": {
                 "rotate_degrees": ("INT", {"default": 0, "min": 0, "max": 359, "step": 1}),
+                "rotation_fill_mode": (["black", "tile", "crop_to_fit"], {"default": "tile", 
+                                      "tooltip": "How to handle rotation: black=fill with black, tile=tile rotated image, crop_to_fit=crop to original size"}),
                 "grid_rows": ("INT", {"default": 0, "min": 0, "max": 10, "step": 1}),
                 "grid_cols": ("INT", {"default": 0, "min": 0, "max": 10, "step": 1}),
                 "invert_colors": ("BOOLEAN", {"default": False}),
@@ -146,7 +148,7 @@ class TextureTransformer:
     FUNCTION = "transform_texture"
     CATEGORY = "DeepStereo/Texture"
 
-    def transform_texture(self, image, rotate_degrees=0, grid_rows=0, grid_cols=0, 
+    def transform_texture(self, image, rotate_degrees=0, rotation_fill_mode="tile", grid_rows=0, grid_cols=0, 
                          invert_colors=False, target_width=0, target_height=0, match_input_dimensions=False):
         
         # Convert ComfyUI tensor to PIL Image
@@ -161,16 +163,10 @@ class TextureTransformer:
         
         transformed_image = img_pil.copy()
         
-        # Apply rotation
+        # Apply rotation with smart filling
         if rotate_degrees != 0:
-            fillcolor = (0, 0, 0)
-            if transformed_image.mode == 'RGBA':
-                fillcolor = (0, 0, 0, 0)
-            transformed_image = transformed_image.rotate(
-                rotate_degrees, 
-                resample=Image.Resampling.BICUBIC, 
-                expand=True, 
-                fillcolor=fillcolor
+            transformed_image = self._apply_smart_rotation(
+                transformed_image, rotate_degrees, rotation_fill_mode, original_width, original_height
             )
         
         # Apply grid transformation
@@ -218,6 +214,68 @@ class TextureTransformer:
         result_tensor = result_tensor.unsqueeze(0)  # Add batch dimension
         
         return (result_tensor,)
+
+    def _apply_smart_rotation(self, image, degrees, fill_mode, target_width, target_height):
+        """Apply rotation with various fill strategies"""
+        
+        if fill_mode == "black":
+            # Original behavior - fill with black
+            fillcolor = (0, 0, 0)
+            if image.mode == 'RGBA':
+                fillcolor = (0, 0, 0, 0)
+            return image.rotate(degrees, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=fillcolor)
+        
+        elif fill_mode == "crop_to_fit":
+            # Rotate without expanding, then crop/pad to fit original dimensions
+            rotated = image.rotate(degrees, resample=Image.Resampling.BICUBIC, expand=False)
+            # This keeps original dimensions but crops the rotated content
+            return rotated
+        
+        elif fill_mode == "tile":
+            # Rotate with expansion, then tile to fill target dimensions
+            
+            # First, rotate with expansion
+            rotated_expanded = image.rotate(degrees, resample=Image.Resampling.BICUBIC, expand=True)
+            
+            # Create a canvas of target dimensions
+            result_canvas = Image.new(image.mode, (target_width, target_height))
+            
+            # Get dimensions
+            rotated_width, rotated_height = rotated_expanded.size
+            
+            # Calculate how many tiles we need in each direction
+            tiles_x = (target_width // rotated_width) + 2  # +2 for safety margin
+            tiles_y = (target_height // rotated_height) + 2
+            
+            # Create a larger tiled image
+            tiled_width = tiles_x * rotated_width
+            tiled_height = tiles_y * rotated_height
+            tiled_image = Image.new(image.mode, (tiled_width, tiled_height))
+            
+            # Tile the rotated image
+            for tile_y in range(tiles_y):
+                for tile_x in range(tiles_x):
+                    paste_x = tile_x * rotated_width
+                    paste_y = tile_y * rotated_height
+                    tiled_image.paste(rotated_expanded, (paste_x, paste_y))
+            
+            # Calculate center crop coordinates to get target dimensions
+            crop_x = (tiled_width - target_width) // 2
+            crop_y = (tiled_height - target_height) // 2
+            
+            # Crop to target size
+            result_canvas = tiled_image.crop((
+                crop_x, 
+                crop_y, 
+                crop_x + target_width, 
+                crop_y + target_height
+            ))
+            
+            return result_canvas
+        
+        else:
+            # Fallback to black fill
+            return image.rotate(degrees, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=(0, 0, 0))
 
 
 class InputToTextureTransformer:

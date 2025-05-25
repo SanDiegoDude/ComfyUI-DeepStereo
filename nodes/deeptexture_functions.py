@@ -126,13 +126,20 @@ def generate_glyph(glyph_style, size, glyph_element_color=(0,0,0), glyph_bg_colo
     glyph_img=Image.new("RGB",(size,size),glyph_bg_color); draw=ImageDraw.Draw(glyph_img)
     dot_density_factor=0.4
     if glyph_style=="random_dots":
-        for _ in range(int(size*size*dot_density_factor)): draw.point((random.randint(0,size-1),random.randint(0,size-1)),fill=glyph_element_color)
+        for _ in range(int(size*size*dot_density_factor)): 
+            draw.point((random.randint(0,size-1),random.randint(0,size-1)),fill=glyph_element_color)
     elif glyph_style=="lines":
-        for i in range(0,size,max(1,size//3)): draw.line([(i,0),(i,size-1)],fill=glyph_element_color,width=max(1,size//8))
+        for i in range(0,size,max(1,size//3)): 
+            draw.line([(i,0),(i,size-1)],fill=glyph_element_color,width=max(1,size//8))
     elif glyph_style=="circles":
         padding=max(1,size//8); fill_color=glyph_bg_color if random.random()>0.6 else glyph_element_color
-        draw.ellipse([(padding,padding,size-1-padding,size-1-padding)],outline=glyph_element_color,fill=fill_color,width=max(1,size//8))
-    elif glyph_style=="solid": draw.rectangle([(0,0),(size-1,size-1)],fill=glyph_element_color)
+        # Fix: Use flat coordinates instead of nested list
+        coords = (padding, padding, size-1-padding, size-1-padding)
+        draw.ellipse(coords, outline=glyph_element_color, fill=fill_color, width=max(1,size//8))
+    elif glyph_style=="solid": 
+        # Fix: Use flat coordinates instead of nested list
+        coords = (0, 0, size-1, size-1)
+        draw.rectangle(coords, fill=glyph_element_color)
     return glyph_img
 
 def apply_method4_glyph_dither(content_image_pil, num_colors=8, glyph_size=8, glyph_style="random_dots", use_quantized_color_for_glyph_element=True):

@@ -1,0 +1,15 @@
+# Core image processing (ComfyUI should already have PIL/Pillow)
+# Pillow>=8.0.0
+
+# Computer vision for MiDaS preprocessing
+opencv-python>=4.5.0
+
+# Scientific computing (ComfyUI likely has this, but specify minimum version)
+numpy>=1.19.0
+
+# Progress bars for texture generation
+tqdm>=4.50.0
+
+# Note: torch is required but should be installed with ComfyUI
+# If you encounter torch-related issues, ensure ComfyUI is properly installed
+# with CUDA support if using GPU acceleration

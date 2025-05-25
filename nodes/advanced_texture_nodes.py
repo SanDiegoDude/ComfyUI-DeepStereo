@@ -5,6 +5,14 @@ import random
 import math
 import sys
 import os
+# Replace the deeptexture import with:
+from .deeptexture_functions import (
+    apply_method2_density_size,
+    apply_method3_voronoi, 
+    parse_color,
+    blend_images
+)
+
 
 # Add the parent directory to sys.path to import deeptexture
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

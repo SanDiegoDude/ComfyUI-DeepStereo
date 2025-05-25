@@ -24,7 +24,14 @@ class MiDaSDepthEstimator:
             "optional": {
                 "target_width": ("INT", {"default": 0, "min": 0, "max": 2048, "step": 32, 
                                        "tooltip": "Target width for processing (0 = use original size, rounded to 32px)"}),
-                "save_depth_map": ("BOOLEAN", {"default": False}),
+                "depth_boost": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 3.0, "step": 0.1,
+                                        "tooltip": "Multiply depth values for stronger effect"}),
+                "depth_offset": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.05,
+                                         "tooltip": "Add offset to depth values"}),
+                "gamma_correction": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 3.0, "step": 0.1,
+                                             "tooltip": "Gamma correction for depth map"}),
+                "blur_depth": ("INT", {"default": 0, "min": 0, "max": 20, "step": 1,
+                                     "tooltip": "Blur radius for smoothing depth map"}),
             }
         }
 
@@ -71,12 +78,12 @@ class MiDaSDepthEstimator:
             print(f"Error loading MiDaS model: {e}")
             raise
 
-    def estimate_depth(self, image, model_type, invert_depth, target_width=0, save_depth_map=False):
+    def estimate_depth(self, image, model_type, invert_depth, target_width=0, 
+                      depth_boost=1.0, depth_offset=0.0, gamma_correction=1.0, blur_depth=0):
         # Load model if needed
         self.load_model(model_type)
         
         # Convert ComfyUI tensor to PIL Image
-        # ComfyUI images are typically in format [batch, height, width, channels] with values 0-1
         if len(image.shape) == 4:
             image = image[0]  # Take first image if batch
         
@@ -125,6 +132,16 @@ class MiDaSDepthEstimator:
         # MiDaS outputs inverse depth, so we flip it to get normal depth
         processed_depth_normalized = 1.0 - depth_normalized
         
+        # Apply depth processing
+        if depth_offset != 0.0:
+            processed_depth_normalized = np.clip(processed_depth_normalized + depth_offset, 0.0, 1.0)
+        
+        if depth_boost != 1.0:
+            processed_depth_normalized = np.clip(processed_depth_normalized * depth_boost, 0.0, 1.0)
+        
+        if gamma_correction != 1.0:
+            processed_depth_normalized = np.power(processed_depth_normalized, gamma_correction)
+        
         if invert_depth:
             processed_depth_normalized = 1.0 - processed_depth_normalized
         
@@ -132,22 +149,17 @@ class MiDaSDepthEstimator:
         depth_map_visual = (processed_depth_normalized * 255).astype(np.uint8)
         depth_map_pil = Image.fromarray(depth_map_visual, 'L')
         
+        # Apply blur if requested
+        if blur_depth > 0:
+            from PIL import ImageFilter
+            depth_map_pil = depth_map_pil.filter(ImageFilter.GaussianBlur(radius=blur_depth))
+        
         # Resize back to original size if we resized for processing
         if depth_map_pil.size != original_size:
             depth_map_pil = depth_map_pil.resize(original_size, Image.Resampling.LANCZOS)
         
         # Convert depth map to RGB for ComfyUI compatibility
         depth_map_rgb = depth_map_pil.convert('RGB')
-        
-        # Save depth map if requested
-        if save_depth_map:
-            output_dir = folder_paths.get_output_directory()
-            from datetime import datetime
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            depth_filename = f"depth_map_{model_type}_{timestamp}.png"
-            depth_path = os.path.join(output_dir, depth_filename)
-            depth_map_pil.save(depth_path)
-            print(f"Depth map saved to: {depth_path}")
         
         # Convert back to ComfyUI tensor format
         depth_tensor = torch.from_numpy(np.array(depth_map_rgb)).float() / 255.0

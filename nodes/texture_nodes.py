@@ -32,7 +32,7 @@ class ProceduralTextureGenerator:
                 "enable_color_dots": ("BOOLEAN", {"default": True}),
                 "dot_density": ("FLOAT", {"default": 0.7, "min": 0.0, "max": 1.0, "step": 0.05}),
                 "dot_size": ("INT", {"default": 50, "min": 1, "max": 200, "step": 1}),
-                "dot_bg_color": ("STRING", {"default": "black"}),
+                "dot_bg_color": ("STRING", {"default": "000000", "tooltip": "Background color as hex (without #)"}),
                 "dot_color_mode": (["content_pixel", "random_rgb", "random_from_palette", "transformed_hue", "transformed_invert"], {"default": "transformed_hue"}),
                 "hue_shift_degrees": ("FLOAT", {"default": 90.0, "min": 0.0, "max": 360.0, "step": 1.0}),
                 
@@ -51,7 +51,7 @@ class ProceduralTextureGenerator:
     CATEGORY = "DeepStereo/Texture"
 
     def generate_texture(self, image, max_megapixels, combination_mode, blend_type="average", blend_opacity=0.75,
-                        enable_color_dots=True, dot_density=0.7, dot_size=50, dot_bg_color="black", 
+                        enable_color_dots=True, dot_density=0.7, dot_size=50, dot_bg_color="000000", 
                         dot_color_mode="transformed_hue", hue_shift_degrees=90.0,
                         enable_glyph_dither=True, glyph_num_colors=8, glyph_size=10, 
                         glyph_style="random_dots", use_quantized_color=True):
@@ -62,6 +62,19 @@ class ProceduralTextureGenerator:
         
         img_np = (image.cpu().numpy() * 255).astype(np.uint8)
         img_pil = Image.fromarray(img_np, 'RGB')
+        
+        # Convert hex color to RGB tuple for deeptexture
+        def hex_to_rgb(hex_color):
+            try:
+                hex_clean = hex_color.replace("#", "")
+                if len(hex_clean) == 3:
+                    hex_clean = ''.join([c*2 for c in hex_clean])
+                elif len(hex_clean) != 6:
+                    hex_clean = "000000"  # Default black
+                
+                return tuple(int(hex_clean[i:i+2], 16) for i in (0, 2, 4))
+            except ValueError:
+                return (0, 0, 0)  # Default black
         
         # Create args object for deeptexture
         class TextureArgs:
@@ -75,7 +88,7 @@ class ProceduralTextureGenerator:
                 self.tex_method1_color_dots = enable_color_dots
                 self.tex_m1_density = dot_density
                 self.tex_m1_dot_size = dot_size
-                self.tex_m1_bg_color = dot_bg_color
+                self.tex_m1_bg_color = hex_to_rgb(dot_bg_color)  # Convert hex to RGB tuple
                 self.tex_m1_color_mode = dot_color_mode
                 self.tex_m1_hue_shift_degrees = hue_shift_degrees
                 
@@ -123,6 +136,8 @@ class TextureTransformer:
                                        "tooltip": "Stretch to target width (0 = no stretch)"}),
                 "target_height": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 1, 
                                         "tooltip": "Stretch to target height (0 = no stretch)"}),
+                "match_input_dimensions": ("BOOLEAN", {"default": False, 
+                                                     "tooltip": "Resize output to match input dimensions (overrides target width/height)"}),
             }
         }
 
@@ -132,7 +147,7 @@ class TextureTransformer:
     CATEGORY = "DeepStereo/Texture"
 
     def transform_texture(self, image, rotate_degrees=0, grid_rows=0, grid_cols=0, 
-                         invert_colors=False, target_width=0, target_height=0):
+                         invert_colors=False, target_width=0, target_height=0, match_input_dimensions=False):
         
         # Convert ComfyUI tensor to PIL Image
         if len(image.shape) == 4:
@@ -140,6 +155,9 @@ class TextureTransformer:
         
         img_np = (image.cpu().numpy() * 255).astype(np.uint8)
         img_pil = Image.fromarray(img_np, 'RGB')
+        
+        # Store original dimensions for potential restoration
+        original_width, original_height = img_pil.size
         
         transformed_image = img_pil.copy()
         
@@ -157,13 +175,13 @@ class TextureTransformer:
         
         # Apply grid transformation
         if grid_rows > 0 and grid_cols > 0:
-            original_width, original_height = transformed_image.size
-            cell_width = original_width // grid_cols
-            cell_height = original_height // grid_rows
+            current_width, current_height = transformed_image.size
+            cell_width = current_width // grid_cols
+            cell_height = current_height // grid_rows
             
             if cell_width > 0 and cell_height > 0:
                 cell_texture = transformed_image.resize((cell_width, cell_height), Image.Resampling.LANCZOS)
-                grid_image = Image.new(transformed_image.mode, (original_width, original_height))
+                grid_image = Image.new(transformed_image.mode, (current_width, current_height))
                 
                 for r in range(grid_rows):
                     for c in range(grid_cols):
@@ -182,8 +200,13 @@ class TextureTransformer:
                 r_inv, g_inv, b_inv = ImageChops.invert(r), ImageChops.invert(g), ImageChops.invert(b)
                 transformed_image = Image.merge('RGBA', (r_inv, g_inv, b_inv, a))
         
-        # Apply stretching if target dimensions are specified
-        if target_width > 0 or target_height > 0:
+        # Apply final resizing
+        if match_input_dimensions:
+            # Override target width/height with original dimensions
+            if transformed_image.size != (original_width, original_height):
+                transformed_image = transformed_image.resize((original_width, original_height), Image.Resampling.LANCZOS)
+        elif target_width > 0 or target_height > 0:
+            # Apply stretching if target dimensions are specified
             current_width, current_height = transformed_image.size
             new_width = target_width if target_width > 0 else current_width
             new_height = target_height if target_height > 0 else current_height

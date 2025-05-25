@@ -3,7 +3,6 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageChops, ImageColor, ImageEnhance
 import random
 import math
-from tqdm import tqdm
 import os
 
 # Import deeptexture functions from our local module

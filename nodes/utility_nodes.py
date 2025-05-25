@@ -1,18 +1,192 @@
 import torch
 import numpy as np
+from PIL import Image
+import cv2
+import os
+import folder_paths
+import logging
+
+class MiDaSDepthEstimator:
+    def __init__(self):
+        self.model = None
+        self.transform = None
+        self.device = None
+        self.current_model_type = None
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "model_type": (["MiDaS_small", "DPT_Large", "DPT_Hybrid"], {"default": "MiDaS_small"}),
+                "invert_depth": ("BOOLEAN", {"default": False}),
+            },
+            "optional": {
+                "target_width": ("INT", {"default": 0, "min": 0, "max": 2048, "step": 32, 
+                                       "tooltip": "Target width for processing (0 = use original size, rounded to 32px)"}),
+                "depth_boost": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 3.0, "step": 0.1,
+                                        "tooltip": "Multiply depth values for stronger effect"}),
+                "depth_offset": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.05,
+                                         "tooltip": "Add offset to depth values"}),
+                "gamma_correction": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 3.0, "step": 0.1,
+                                             "tooltip": "Gamma correction for depth map"}),
+                "blur_depth": ("INT", {"default": 0, "min": 0, "max": 20, "step": 1,
+                                     "tooltip": "Blur radius for smoothing depth map"}),
+            }
+        }
+
+    RETURN_TYPES = ("IMAGE", "IMAGE")
+    RETURN_NAMES = ("depth_map", "original_image")
+    FUNCTION = "estimate_depth"
+    CATEGORY = "DeepStereo/Depth"
+
+    def load_model(self, model_type):
+        """Load MiDaS model, saving to ComfyUI's controlnet directory"""
+        if self.current_model_type == model_type and self.model is not None:
+            return  # Model already loaded
+        
+        # Define where to save/load models in ComfyUI structure
+        controlnet_path = folder_paths.get_folder_paths("controlnet")[0]
+        midas_cache_dir = os.path.join(controlnet_path, "midas_models")
+        os.makedirs(midas_cache_dir, exist_ok=True)
+        
+        # Set torch hub cache to our directory
+        torch.hub.set_dir(midas_cache_dir)
+        
+        print(f"Loading MiDaS model ({model_type}) to {midas_cache_dir}...")
+        
+        try:
+            self.model = torch.hub.load("intel-isl/MiDaS", model_type, trust_repo=True)
+            midas_transforms = torch.hub.load("intel-isl/MiDaS", "transforms", trust_repo=True)
+            
+            if model_type == "DPT_Large" or model_type == "DPT_Hybrid":
+                self.transform = midas_transforms.dpt_transform
+            elif model_type == "MiDaS_small":
+                self.transform = midas_transforms.small_transform
+            else:
+                print(f"Warning: Unknown MiDaS model type '{model_type}'. Using small_transform.")
+                self.transform = midas_transforms.small_transform
+                
+            self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+            self.model.to(self.device)
+            self.model.eval()
+            self.current_model_type = model_type
+            
+            print(f"MiDaS model loaded successfully on device: {self.device}")
+            
+        except Exception as e:
+            print(f"Error loading MiDaS model: {e}")
+            raise
+
+    def estimate_depth(self, image, model_type, invert_depth, target_width=0, 
+                      depth_boost=1.0, depth_offset=0.0, gamma_correction=1.0, blur_depth=0):
+        # Load model if needed
+        self.load_model(model_type)
+        
+        # Convert ComfyUI tensor to PIL Image
+        if len(image.shape) == 4:
+            image = image[0]  # Take first image if batch
+        
+        # Convert from tensor to numpy array with proper scaling
+        img_np = (image.cpu().numpy() * 255).astype(np.uint8)
+        img_pil = Image.fromarray(img_np, 'RGB')
+        
+        original_size = img_pil.size
+        processing_image = img_pil.copy()
+        
+        # Handle target width resizing
+        if target_width > 0:
+            aspect_ratio = img_pil.height / img_pil.width
+            target_width_rounded = (target_width // 32) * 32
+            target_height_rounded = (int(target_width_rounded * aspect_ratio) // 32) * 32
+            
+            if target_width_rounded > 0 and target_height_rounded > 0:
+                processing_image = img_pil.resize((target_width_rounded, target_height_rounded), Image.Resampling.LANCZOS)
+                print(f"Resized for MiDaS processing: {original_size} -> {processing_image.size}")
+        
+        # Convert to OpenCV format for MiDaS
+        img_cv = np.array(processing_image)
+        img_cv = cv2.cvtColor(img_cv, cv2.COLOR_RGB2BGR)
+        
+        # Apply MiDaS transform and run inference
+        input_batch = self.transform(img_cv).to(self.device)
+        
+        with torch.no_grad():
+            prediction = self.model(input_batch)
+            prediction = torch.nn.functional.interpolate(
+                prediction.unsqueeze(1), 
+                size=processing_image.size[::-1],  # height, width
+                mode="bicubic", 
+                align_corners=False
+            ).squeeze()
+        
+        # Process depth output
+        depth_output = prediction.cpu().numpy()
+        depth_min, depth_max = np.min(depth_output), np.max(depth_output)
+        
+        if depth_max > depth_min:
+            depth_normalized = (depth_output - depth_min) / (depth_max - depth_min)
+        else:
+            depth_normalized = np.zeros_like(depth_output)
+        
+        # MiDaS outputs inverse depth, so we flip it to get normal depth
+        processed_depth_normalized = 1.0 - depth_normalized
+        
+        # Apply depth processing
+        if depth_offset != 0.0:
+            processed_depth_normalized = np.clip(processed_depth_normalized + depth_offset, 0.0, 1.0)
+        
+        if depth_boost != 1.0:
+            processed_depth_normalized = np.clip(processed_depth_normalized * depth_boost, 0.0, 1.0)
+        
+        if gamma_correction != 1.0:
+            processed_depth_normalized = np.power(processed_depth_normalized, gamma_correction)
+        
+        if invert_depth:
+            processed_depth_normalized = 1.0 - processed_depth_normalized
+        
+        # Convert to 8-bit grayscale
+        depth_map_visual = (processed_depth_normalized * 255).astype(np.uint8)
+        depth_map_pil = Image.fromarray(depth_map_visual, 'L')
+        
+        # Apply blur if requested
+        if blur_depth > 0:
+            from PIL import ImageFilter
+            depth_map_pil = depth_map_pil.filter(ImageFilter.GaussianBlur(radius=blur_depth))
+        
+        # Resize back to original size if we resized for processing
+        if depth_map_pil.size != original_size:
+            depth_map_pil = depth_map_pil.resize(original_size, Image.Resampling.LANCZOS)
+        
+        # Convert depth map to RGB for ComfyUI compatibility
+        depth_map_rgb = depth_map_pil.convert('RGB')
+        
+        # Convert back to ComfyUI tensor format
+        depth_tensor = torch.from_numpy(np.array(depth_map_rgb)).float() / 255.0
+        depth_tensor = depth_tensor.unsqueeze(0)  # Add batch dimension
+        
+        original_tensor = torch.from_numpy(np.array(img_pil)).float() / 255.0
+        original_tensor = original_tensor.unsqueeze(0)  # Add batch dimension
+        
+        return (depth_tensor, original_tensor)
+File: nodes/utility_nodes.py (updated combined node)
+pythonCopyimport torch
+import numpy as np
 from PIL import Image, ImageFilter
 import random
 
-class ImageResizer:
-    """Resize images with various options"""
+class ImageResizeAndTransform:
+    """Resize and transform images with optional upscaler model support"""
     
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
+                "operation": (["resize_only", "resize_with_upscaler", "rotate", "flip_horizontal", "flip_vertical"], {"default": "resize_only"}),
             },
             "optional": {
+                # Resize options
                 "target_megapixels": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 50.0, "step": 0.1, 
                                               "tooltip": "Target MP (0 = use width/height instead)"}),
                 "target_width": ("INT", {"default": 0, "min": 0, "max": 8192, "step": 1, 
@@ -21,16 +195,47 @@ class ImageResizer:
                                         "tooltip": "Target height (0 = auto from width or MP)"}),
                 "maintain_aspect": ("BOOLEAN", {"default": True}),
                 "resample_method": (["LANCZOS", "BICUBIC", "BILINEAR", "NEAREST"], {"default": "LANCZOS"}),
+                
+                # Transform options
+                "rotation_degrees": ("INT", {"default": 90, "min": 0, "max": 359, "step": 1}),
+                
+                # Upscaler options
+                "upscale_model": ("UPSCALE_MODEL", {"tooltip": "Connect from Load Upscale Model node"}),
+                "upscale_factor": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 8.0, "step": 0.1}),
             }
         }
 
     RETURN_TYPES = ("IMAGE", "INT", "INT")
-    RETURN_NAMES = ("resized_image", "width", "height")
-    FUNCTION = "resize_image"
+    RETURN_NAMES = ("processed_image", "width", "height")
+    FUNCTION = "process_image"
     CATEGORY = "DeepStereo/Utility"
 
-    def resize_image(self, image, target_megapixels=0.0, target_width=0, target_height=0, 
-                    maintain_aspect=True, resample_method="LANCZOS"):
+    def process_image(self, image, operation, target_megapixels=0.0, target_width=0, target_height=0, 
+                     maintain_aspect=True, resample_method="LANCZOS", rotation_degrees=90,
+                     upscale_model=None, upscale_factor=2.0):
+        
+        # Handle batch input
+        if len(image.shape) == 4 and image.shape[0] > 1:
+            # Process batch
+            processed_images = []
+            for i in range(image.shape[0]):
+                single_img = image[i:i+1]  # Keep batch dimension
+                result, w, h = self._process_single_image(
+                    single_img, operation, target_megapixels, target_width, target_height,
+                    maintain_aspect, resample_method, rotation_degrees, upscale_model, upscale_factor
+                )
+                processed_images.append(result[0])  # Remove batch dimension for stacking
+            
+            batch_result = torch.stack(processed_images, dim=0)
+            return (batch_result, w, h)
+        else:
+            return self._process_single_image(
+                image, operation, target_megapixels, target_width, target_height,
+                maintain_aspect, resample_method, rotation_degrees, upscale_model, upscale_factor
+            )
+
+    def _process_single_image(self, image, operation, target_megapixels, target_width, target_height,
+                             maintain_aspect, resample_method, rotation_degrees, upscale_model, upscale_factor):
         
         # Convert ComfyUI tensor to PIL Image
         if len(image.shape) == 4:
@@ -39,63 +244,162 @@ class ImageResizer:
         img_np = (image.cpu().numpy() * 255).astype(np.uint8)
         img_pil = Image.fromarray(img_np, 'RGB')
         
-        original_width, original_height = img_pil.size
+        if operation == "resize_with_upscaler" and upscale_model is not None:
+            # Use upscaler model
+            # Convert back to tensor for upscaler
+            img_tensor = torch.from_numpy(img_np).float() / 255.0
+            img_tensor = img_tensor.permute(2, 0, 1).unsqueeze(0)  # BHWC -> BCHW
+            
+            # Apply upscaler
+            try:
+                from comfy.model_management import get_torch_device
+                device = get_torch_device()
+                img_tensor = img_tensor.to(device)
+                upscale_model.to(device)
+                
+                with torch.no_grad():
+                    upscaled = upscale_model(img_tensor)
+                
+                # Convert back to PIL
+                upscaled = upscaled.squeeze(0).permute(1, 2, 0).cpu().numpy()
+                upscaled = (upscaled * 255).astype(np.uint8)
+                img_pil = Image.fromarray(upscaled, 'RGB')
+                
+            except Exception as e:
+                print(f"Upscaler failed: {e}, falling back to PIL resize")
+                new_size = (int(img_pil.width * upscale_factor), int(img_pil.height * upscale_factor))
+                img_pil = img_pil.resize(new_size, Image.Resampling.LANCZOS)
         
-        # Determine target dimensions
-        if target_megapixels > 0:
-            # Calculate size based on megapixels
-            current_mp = (original_width * original_height) / 1_000_000.0
-            if current_mp <= target_megapixels:
-                new_width, new_height = original_width, original_height
-            else:
-                import math
-                scale_factor = math.sqrt(target_megapixels / current_mp)
-                new_width = int(original_width * scale_factor)
-                new_height = int(original_height * scale_factor)
-        elif target_width > 0 or target_height > 0:
-            # Calculate size based on width/height
-            if maintain_aspect:
-                if target_width > 0 and target_height > 0:
-                    # Both specified, choose smaller scale to maintain aspect
-                    scale_w = target_width / original_width
-                    scale_h = target_height / original_height
-                    scale = min(scale_w, scale_h)
-                    new_width = int(original_width * scale)
-                    new_height = int(original_height * scale)
-                elif target_width > 0:
-                    # Only width specified
-                    scale = target_width / original_width
-                    new_width = target_width
-                    new_height = int(original_height * scale)
+        elif operation == "resize_only":
+            # Standard resize logic
+            original_width, original_height = img_pil.size
+            
+            if target_megapixels > 0:
+                current_mp = (original_width * original_height) / 1_000_000.0
+                if current_mp > target_megapixels:
+                    import math
+                    scale_factor = math.sqrt(target_megapixels / current_mp)
+                    new_width = int(original_width * scale_factor)
+                    new_height = int(original_height * scale_factor)
                 else:
-                    # Only height specified
-                    scale = target_height / original_height
-                    new_width = int(original_width * scale)
-                    new_height = target_height
+                    new_width, new_height = original_width, original_height
+            elif target_width > 0 or target_height > 0:
+                if maintain_aspect:
+                    if target_width > 0 and target_height > 0:
+                        scale_w = target_width / original_width
+                        scale_h = target_height / original_height
+                        scale = min(scale_w, scale_h)
+                        new_width = int(original_width * scale)
+                        new_height = int(original_height * scale)
+                    elif target_width > 0:
+                        scale = target_width / original_width
+                        new_width = target_width
+                        new_height = int(original_height * scale)
+                    else:
+                        scale = target_height / original_height
+                        new_width = int(original_width * scale)
+                        new_height = target_height
+                else:
+                    new_width = target_width if target_width > 0 else original_width
+                    new_height = target_height if target_height > 0 else original_height
             else:
-                new_width = target_width if target_width > 0 else original_width
-                new_height = target_height if target_height > 0 else original_height
-        else:
-            # No resize needed
-            new_width, new_height = original_width, original_height
+                new_width, new_height = original_width, original_height
+            
+            if (new_width, new_height) != (original_width, original_height):
+                resample_map = {
+                    "LANCZOS": Image.Resampling.LANCZOS,
+                    "BICUBIC": Image.Resampling.BICUBIC,
+                    "BILINEAR": Image.Resampling.BILINEAR,
+                    "NEAREST": Image.Resampling.NEAREST,
+                }
+                resample = resample_map.get(resample_method, Image.Resampling.LANCZOS)
+                img_pil = img_pil.resize((new_width, new_height), resample)
         
-        # Apply resize if dimensions changed
-        if (new_width, new_height) != (original_width, original_height):
-            resample_map = {
-                "LANCZOS": Image.Resampling.LANCZOS,
-                "BICUBIC": Image.Resampling.BICUBIC,
-                "BILINEAR": Image.Resampling.BILINEAR,
-                "NEAREST": Image.Resampling.NEAREST,
-            }
-            resample = resample_map.get(resample_method, Image.Resampling.LANCZOS)
-            img_pil = img_pil.resize((new_width, new_height), resample)
+        elif operation == "rotate":
+            img_pil = img_pil.rotate(rotation_degrees, expand=True)
+        elif operation == "flip_horizontal":
+            img_pil = img_pil.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+        elif operation == "flip_vertical":
+            img_pil = img_pil.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
         
         # Convert back to ComfyUI tensor
         result_np = np.array(img_pil)
         result_tensor = torch.from_numpy(result_np).float() / 255.0
         result_tensor = result_tensor.unsqueeze(0)
         
-        return (result_tensor, new_width, new_height)
+        return (result_tensor, img_pil.width, img_pil.height)
+
+
+class ColorPickerNode:
+    """Generate hex color codes from RGB sliders or presets"""
+    
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "color_mode": (["rgb_sliders", "preset_colors", "hex_input"], {"default": "rgb_sliders"}),
+            },
+            "optional": {
+                # RGB sliders
+                "red": ("INT", {"default": 0, "min": 0, "max": 255, "step": 1}),
+                "green": ("INT", {"default": 0, "min": 0, "max": 255, "step": 1}),
+                "blue": ("INT", {"default": 255, "min": 0, "max": 255, "step": 1}),
+                
+                # Preset colors
+                "preset_color": (["red", "green", "blue", "cyan", "magenta", "yellow", "orange", "purple", 
+                                "dark_red", "dark_green", "dark_blue", "light_gray", "dark_gray", "black", "white"], 
+                               {"default": "blue"}),
+                
+                # Direct hex input (without #)
+                "hex_input": ("STRING", {"default": "0000FF", "tooltip": "6-digit hex code without #"}),
+                
+                # Output format
+                "include_hash": ("BOOLEAN", {"default": True, "tooltip": "Include # in hex output"}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING", "INT", "INT", "INT")
+    RETURN_NAMES = ("hex_color", "red", "green", "blue")
+    FUNCTION = "generate_color"
+    CATEGORY = "DeepStereo/Utility"
+
+    def generate_color(self, color_mode, red=0, green=0, blue=255, preset_color="blue", 
+                      hex_input="0000FF", include_hash=True):
+        
+        if color_mode == "rgb_sliders":
+            r, g, b = red, green, blue
+        elif color_mode == "preset_colors":
+            preset_map = {
+                "red": (255, 0, 0), "green": (0, 255, 0), "blue": (0, 0, 255),
+                "cyan": (0, 255, 255), "magenta": (255, 0, 255), "yellow": (255, 255, 0),
+                "orange": (255, 165, 0), "purple": (128, 0, 128),
+                "dark_red": (128, 0, 0), "dark_green": (0, 128, 0), "dark_blue": (0, 0, 128),
+                "light_gray": (192, 192, 192), "dark_gray": (64, 64, 64),
+                "black": (0, 0, 0), "white": (255, 255, 255)
+            }
+            r, g, b = preset_map.get(preset_color, (0, 0, 255))
+        else:  # hex_input
+            try:
+                # Remove # if present
+                hex_clean = hex_input.replace("#", "")
+                # Ensure 6 digits
+                if len(hex_clean) == 3:
+                    hex_clean = ''.join([c*2 for c in hex_clean])
+                elif len(hex_clean) != 6:
+                    hex_clean = "0000FF"  # Default blue
+                
+                r = int(hex_clean[0:2], 16)
+                g = int(hex_clean[2:4], 16)
+                b = int(hex_clean[4:6], 16)
+            except ValueError:
+                r, g, b = 0, 0, 255  # Default blue
+        
+        # Generate hex output
+        hex_color = f"{r:02X}{g:02X}{b:02X}"
+        if include_hash:
+            hex_color = "#" + hex_color
+        
+        return (hex_color, r, g, b)
 
 
 class DepthMapProcessor:

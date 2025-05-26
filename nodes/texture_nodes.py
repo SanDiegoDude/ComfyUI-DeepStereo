@@ -269,7 +269,6 @@ class TextureTransformer:
             print("DEBUG: Using tile mode")
             
             # FOR TILE MODE: We need to create a larger canvas BEFORE rotation to avoid any black fill
-            # Calculate how big we need the canvas to be to avoid black after rotation
             import math
             
             # For a 45-degree rotation (worst case), we need sqrt(2) times the dimensions
@@ -317,14 +316,73 @@ class TextureTransformer:
             
         elif fill_mode == "crop_to_fit":
             print("DEBUG: Using crop_to_fit mode")
-            # Rotate without expanding, keeping original dimensions
-            rotated = image.rotate(degrees, resample=Image.Resampling.BICUBIC, expand=False, fillcolor=fill_color_rgb)
             
-            # Resize to target if needed
-            if rotated.size != (target_width, target_height):
-                rotated = rotated.resize((target_width, target_height), Image.Resampling.LANCZOS)
+            # Calculate the largest rectangle that fits inside the rotated image
+            # without showing any background fill
+            import math
             
-            return rotated
+            orig_width, orig_height = image.size
+            
+            # Convert degrees to radians
+            angle_rad = math.radians(abs(degrees % 360))
+            
+            # For a rectangle rotated by angle θ, the largest inscribed rectangle
+            # (that doesn't include any background) has dimensions:
+            # This is based on the "largest rectangle in rotated rectangle" problem
+            
+            if angle_rad == 0:
+                # No rotation, use original size
+                inscribed_width = orig_width
+                inscribed_height = orig_height
+            else:
+                # Calculate the inscribed rectangle size
+                # This ensures we never see background fill
+                cos_a = abs(math.cos(angle_rad))
+                sin_a = abs(math.sin(angle_rad))
+                
+                # The inscribed rectangle dimensions
+                inscribed_width = int((orig_width * cos_a + orig_height * sin_a) / 
+                                    (cos_a**2 + sin_a**2) * cos_a)
+                inscribed_height = int((orig_width * cos_a + orig_height * sin_a) / 
+                                     (cos_a**2 + sin_a**2) * sin_a)
+                
+                # Make sure we don't exceed original dimensions
+                inscribed_width = min(inscribed_width, orig_width)
+                inscribed_height = min(inscribed_height, orig_height)
+            
+            print(f"DEBUG: Original size: {orig_width}x{orig_height}")
+            print(f"DEBUG: Calculated inscribed size: {inscribed_width}x{inscribed_height}")
+            
+            # Create a larger canvas to work with (to avoid edge artifacts)
+            work_size = max(orig_width, orig_height) * 2
+            work_canvas = Image.new(image.mode, (work_size, work_size))
+            
+            # Paste original image in center of work canvas
+            paste_x = (work_size - orig_width) // 2
+            paste_y = (work_size - orig_height) // 2
+            work_canvas.paste(image, (paste_x, paste_y))
+            
+            # Rotate the work canvas
+            rotated_work = work_canvas.rotate(degrees, resample=Image.Resampling.BICUBIC, expand=False)
+            
+            # Crop the inscribed rectangle from the center
+            center_x = work_size // 2
+            center_y = work_size // 2
+            
+            crop_left = center_x - inscribed_width // 2
+            crop_top = center_y - inscribed_height // 2
+            crop_right = crop_left + inscribed_width
+            crop_bottom = crop_top + inscribed_height
+            
+            cropped_result = rotated_work.crop((crop_left, crop_top, crop_right, crop_bottom))
+            print(f"DEBUG: Cropped result size: {cropped_result.size}")
+            
+            # Finally, resize to target dimensions if needed
+            if cropped_result.size != (target_width, target_height):
+                print(f"DEBUG: Resizing cropped result to target {target_width}x{target_height}")
+                cropped_result = cropped_result.resize((target_width, target_height), Image.Resampling.LANCZOS)
+            
+            return cropped_result
             
         else:  # black_fill
             print("DEBUG: Using black_fill mode")
@@ -341,8 +399,6 @@ class TextureTransformer:
                 rotated = rotated.resize((target_width, target_height), Image.Resampling.LANCZOS)
             
             return rotated
-
-
 class InputToTextureTransformer:
     """Transform input image to colored/hazy texture effect"""
     

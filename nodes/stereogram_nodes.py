@@ -16,7 +16,11 @@ class StereogramGenerator:
                 "min_separation": ("INT", {"default": 40, "min": 10, "max": 200, "step": 1}),
                 "max_separation": ("INT", {"default": 100, "min": 20, "max": 300, "step": 1}),
                 "algorithm": (["standard", "improved", "layered", "central"], {"default": "layered"}),
-                "reference_type": (["left_to_right", "right_to_left", "center_out", "vertical"], {"default": "left_to_right"}),
+                "reference_type": (["left_to_right", "right_to_left", "center_out"], {"default": "left_to_right"}),
+                "depth_layers": ("INT", {"default": 0, "min": 0, "max": 50, "step": 1, 
+                    "tooltip": "Number of distinct depth layers (0 for continuous)"}),
+                "layer_smoothing": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01,
+                    "tooltip": "Amount of smoothing between layers"}),
             },
             "optional": {
                 "stretch_texture": ("BOOLEAN", {"default": False, "tooltip": "Stretch texture to match depth map size"}),
@@ -29,7 +33,51 @@ class StereogramGenerator:
     FUNCTION = "generate_stereogram"
     CATEGORY = "DeepStereo/Generation"
 
-    def generate_stereogram(self, depth_map, texture, min_separation, max_separation, algorithm, reference_type="left_to_right", stretch_texture=False, center_offset=0):
+    def _process_depth_value(self, depth_value, depth_layers, layer_smoothing):
+        """Process depth value with optional layering and smoothing"""
+        if depth_layers <= 1:
+            return depth_value
+        
+        # Calculate the size of each layer
+        layer_size = 1.0 / (depth_layers - 1)
+        
+        # Find the nearest layers
+        base_layer = int(depth_value * (depth_layers - 1))
+        base_value = base_layer * layer_size
+        
+        if base_layer >= depth_layers - 1:
+            return 1.0
+        
+        # Calculate distance to next layer
+        next_value = (base_layer + 1) * layer_size
+        layer_position = (depth_value - base_value) / layer_size
+        
+        # Apply smoothing
+        if layer_smoothing <= 0:
+            return base_value
+        elif layer_smoothing >= 1:
+            return depth_value
+        
+        # Smooth transition between layers using cosine interpolation
+        t = layer_position
+        if layer_smoothing < 1:
+            # Adjust the transition width based on smoothing
+            threshold = layer_smoothing / 2
+            if t < threshold:
+                t = 0
+            elif t > (1 - threshold):
+                t = 1
+            else:
+                # Normalize t to 0-1 range within the smoothing window
+                t = (t - threshold) / (1 - 2 * threshold)
+                # Apply cosine interpolation
+                t = (1 - np.cos(t * np.pi)) / 2
+        
+        return base_value + (next_value - base_value) * t
+
+    def generate_stereogram(self, depth_map, texture, min_separation, max_separation, algorithm, 
+                          reference_type="left_to_right", depth_layers=0, layer_smoothing=0.5,
+                          stretch_texture=False, center_offset=0):
         if min_separation >= max_separation:
             raise ValueError("min_separation must be less than max_separation")
         
@@ -51,23 +99,21 @@ class StereogramGenerator:
         
         # Generate stereogram based on algorithm and reference type
         if reference_type == "center_out":
-            result_pil = self._generate_from_center(depth_pil, texture_pil, min_separation, max_separation, center_offset)
+            result_pil = self._generate_from_center(depth_pil, texture_pil, min_separation, max_separation, center_offset, depth_layers, layer_smoothing)
         elif reference_type == "right_to_left":
             # Flip the image, generate, then flip back
             depth_pil = depth_pil.transpose(Image.FLIP_LEFT_RIGHT)
-            result_pil = self._generate_standard(depth_pil, texture_pil, min_separation, max_separation)
+            result_pil = self._generate_standard(depth_pil, texture_pil, min_separation, max_separation, depth_layers, layer_smoothing)
             result_pil = result_pil.transpose(Image.FLIP_LEFT_RIGHT)
-        elif reference_type == "vertical":
-            result_pil = self._generate_vertical(depth_pil, texture_pil, min_separation, max_separation)
-        else:  # left_to_right
+        else:  # left_to_right or any other type
             if algorithm == "standard":
-                result_pil = self._generate_standard(depth_pil, texture_pil, min_separation, max_separation)
+                result_pil = self._generate_standard(depth_pil, texture_pil, min_separation, max_separation, depth_layers, layer_smoothing)
             elif algorithm == "improved":
-                result_pil = self._generate_improved(depth_pil, texture_pil, min_separation, max_separation)
+                result_pil = self._generate_improved(depth_pil, texture_pil, min_separation, max_separation, depth_layers, layer_smoothing)
             elif algorithm == "layered":
-                result_pil = self._generate_layered(depth_pil, texture_pil, min_separation, max_separation)
+                result_pil = self._generate_layered(depth_pil, texture_pil, min_separation, max_separation, depth_layers, layer_smoothing)
             elif algorithm == "central":
-                result_pil = self._generate_central_pattern(depth_pil, texture_pil, min_separation, max_separation)
+                result_pil = self._generate_central_pattern(depth_pil, texture_pil, min_separation, max_separation, depth_layers, layer_smoothing)
             else:
                 raise ValueError(f"Unknown algorithm: {algorithm}")
         
@@ -78,7 +124,7 @@ class StereogramGenerator:
         
         return (result_tensor,)
 
-    def _generate_standard(self, depth_map_pil, texture_pil, min_sep, max_sep):
+    def _generate_standard(self, depth_map_pil, texture_pil, min_sep, max_sep, depth_layers=0, layer_smoothing=0.5):
         """Standard stereogram algorithm"""
         width, height = depth_map_pil.size
         texture_width, texture_height = texture_pil.size
@@ -90,7 +136,8 @@ class StereogramGenerator:
 
         for y in range(height):
             for x in range(width):
-                depth_value_normalized = depth_pixels[x, y] / 255.0
+                raw_depth = depth_pixels[x, y] / 255.0
+                depth_value_normalized = self._process_depth_value(raw_depth, depth_layers, layer_smoothing)
                 current_separation = int(min_sep + (max_sep - min_sep) * depth_value_normalized)
                 current_separation = max(1, current_separation)
                 
@@ -104,8 +151,8 @@ class StereogramGenerator:
         
         return stereogram_img
 
-    def _generate_from_center(self, depth_map_pil, texture_pil, min_sep, max_sep, center_offset=0):
-        """Generate stereogram from center outwards"""
+    def _generate_from_center(self, depth_map_pil, texture_pil, min_sep, max_sep, center_offset=0, depth_layers=0, layer_smoothing=0.5):
+        """Generate stereogram from center outwards with continuous depth effect"""
         width, height = depth_map_pil.size
         texture_width, texture_height = texture_pil.size
         stereogram_img = Image.new('RGB', (width, height))
@@ -116,43 +163,60 @@ class StereogramGenerator:
 
         # Calculate center point
         center_x = width // 2 + center_offset
-        
-        # Initialize center strip with texture
+
+        # Pre-initialize with smoothly varying texture
+        # Use different prime numbers for x and y to create non-repeating patterns
         for y in range(height):
-            for x in range(max(0, center_x - max_sep), min(width, center_x + max_sep)):
-                tx = x % texture_width
-                ty = y % texture_height
+            row_seed = (y * 31) % 257  # Large prime for row variation
+            for x in range(width):
+                # Create a smooth pattern that varies both horizontally and vertically
+                tx = ((x * 17 + row_seed) % texture_width + (x * y) // (width + height)) % texture_width
+                ty = ((y * 19 + x * 13) % texture_height + (x * y) // (width + height)) % texture_height
                 output_pixels[x, y] = texture_pixels[tx, ty]
-        
-        # Generate left side
+
+        # Process each row independently
         for y in range(height):
-            for x in range(center_x - max_sep - 1, -1, -1):
-                depth_value_normalized = depth_pixels[x, y] / 255.0
-                current_separation = int(min_sep + (max_sep - min_sep) * depth_value_normalized)
-                ref_x = x + current_separation
-                if ref_x < width:
-                    output_pixels[x, y] = output_pixels[ref_x, y]
-                else:
-                    tx = x % texture_width
-                    ty = y % texture_height
-                    output_pixels[x, y] = texture_pixels[tx, ty]
-        
-        # Generate right side
-        for y in range(height):
-            for x in range(center_x + max_sep, width):
-                depth_value_normalized = depth_pixels[x, y] / 255.0
-                current_separation = int(min_sep + (max_sep - min_sep) * depth_value_normalized)
-                ref_x = x - current_separation
-                if ref_x >= 0:
-                    output_pixels[x, y] = output_pixels[ref_x, y]
-                else:
-                    tx = x % texture_width
-                    ty = y % texture_height
-                    output_pixels[x, y] = texture_pixels[tx, ty]
+            # Create temporary buffer for this row
+            row_buffer = [(0,0,0)] * width
+            for x in range(width):
+                row_buffer[x] = output_pixels[x, y]
+
+            # Process both sides simultaneously to maintain pattern consistency
+            left_x = center_x - 1
+            right_x = center_x + 1
+
+            while left_x >= 0 or right_x < width:
+                # Process left side
+                if left_x >= 0:
+                    raw_depth = depth_pixels[left_x, y] / 255.0
+                    depth_value = self._process_depth_value(raw_depth, depth_layers, layer_smoothing)
+                    separation = int(min_sep + (max_sep - min_sep) * depth_value)
+                    ref_x = left_x + separation
+                    
+                    if ref_x < width:
+                        row_buffer[left_x] = row_buffer[ref_x]
+                    # else keep pre-initialized texture
+                    left_x -= 1
+
+                # Process right side
+                if right_x < width:
+                    raw_depth = depth_pixels[right_x, y] / 255.0
+                    depth_value = self._process_depth_value(raw_depth, depth_layers, layer_smoothing)
+                    separation = int(min_sep + (max_sep - min_sep) * depth_value)
+                    ref_x = right_x - separation
+                    
+                    if ref_x >= 0:
+                        row_buffer[right_x] = row_buffer[ref_x]
+                    # else keep pre-initialized texture
+                    right_x += 1
+
+            # Copy buffer back to image
+            for x in range(width):
+                output_pixels[x, y] = row_buffer[x]
         
         return stereogram_img
 
-    def _generate_vertical(self, depth_map_pil, texture_pil, min_sep, max_sep):
+    def _generate_vertical(self, depth_map_pil, texture_pil, min_sep, max_sep, depth_layers=0, layer_smoothing=0.5):
         """Generate stereogram using vertical parallax"""
         width, height = depth_map_pil.size
         texture_width, texture_height = texture_pil.size
@@ -184,8 +248,8 @@ class StereogramGenerator:
         
         return stereogram_img
 
-    def _generate_central_pattern(self, depth_map_pil, texture_pil, min_sep, max_sep):
-        """Generate stereogram with a central pattern focus"""
+    def _generate_central_pattern(self, depth_map_pil, texture_pil, min_sep, max_sep, depth_layers=0, layer_smoothing=0.5):
+        """Generate stereogram with enhanced pattern variation"""
         width, height = depth_map_pil.size
         texture_width, texture_height = texture_pil.size
         stereogram_img = Image.new('RGB', (width, height))
@@ -194,39 +258,42 @@ class StereogramGenerator:
         texture_pixels = texture_pil.load()
         output_pixels = stereogram_img.load()
 
-        # Create a central pattern region
-        center_x = width // 2
-        pattern_width = max_sep * 2
-        
-        # Initialize with unique patterns in the center
+        # Pre-initialize with varying texture pattern
         for y in range(height):
-            for x in range(max(0, center_x - pattern_width), min(width, center_x + pattern_width)):
-                # Create more varied pattern in center
-                tx = ((x * 17 + y * 13) % texture_width + x // 4) % texture_width
-                ty = ((y * 19 + x * 11) % texture_height + y // 4) % texture_height
-                output_pixels[x, y] = texture_pixels[tx, ty]
-        
-        # Generate outwards from center
+            row_seed = (y * 31) % 257  # Large prime for row variation
+            for x in range(width):
+                # Create a complex pattern that varies both horizontally and vertically
+                pattern_x = ((x * 17 + row_seed) % texture_width + (x * y) // (width + height)) % texture_width
+                pattern_y = ((y * 19 + x * 13) % texture_height + (x * y) // (width + height)) % texture_height
+                output_pixels[x, y] = texture_pixels[pattern_x, pattern_y]
+
+        # Process each row with enhanced pattern consistency
         for y in range(height):
-            # Left side
-            for x in range(center_x - pattern_width - 1, -1, -1):
-                depth_value_normalized = depth_pixels[x, y] / 255.0
-                current_separation = int(min_sep + (max_sep - min_sep) * depth_value_normalized)
-                ref_x = x + current_separation
-                if ref_x < width:
-                    output_pixels[x, y] = output_pixels[ref_x, y]
+            # Create row buffer for consistent pattern propagation
+            row_buffer = [(0,0,0)] * width
+            for x in range(width):
+                row_buffer[x] = output_pixels[x, y]
+
+            # Process from left to right with pattern awareness
+            for x in range(width):
+                raw_depth = depth_pixels[x, y] / 255.0
+                depth_value = self._process_depth_value(raw_depth, depth_layers, layer_smoothing)
+                current_separation = int(min_sep + (max_sep - min_sep) * depth_value)
                 
-            # Right side
-            for x in range(center_x + pattern_width, width):
-                depth_value_normalized = depth_pixels[x, y] / 255.0
-                current_separation = int(min_sep + (max_sep - min_sep) * depth_value_normalized)
-                ref_x = x - current_separation
-                if ref_x >= 0:
-                    output_pixels[x, y] = output_pixels[ref_x, y]
+                if x < current_separation:
+                    # Keep the pre-initialized pattern
+                    continue
+                else:
+                    ref_x = x - current_separation
+                    row_buffer[x] = row_buffer[ref_x]
+
+            # Copy buffer back to image
+            for x in range(width):
+                output_pixels[x, y] = row_buffer[x]
         
         return stereogram_img
 
-    def _generate_improved(self, depth_map_pil, texture_pil, min_sep, max_sep):
+    def _generate_improved(self, depth_map_pil, texture_pil, min_sep, max_sep, depth_layers=0, layer_smoothing=0.5):
         """Improved algorithm with better texture distribution"""
         width, height = depth_map_pil.size
         texture_width, texture_height = texture_pil.size
@@ -286,7 +353,7 @@ class StereogramGenerator:
         
         return new_texture
 
-    def _generate_layered(self, depth_map_pil, texture_pil, min_sep, max_sep):
+    def _generate_layered(self, depth_map_pil, texture_pil, min_sep, max_sep, depth_layers=0, layer_smoothing=0.5):
         """Layered algorithm with texture preprocessing"""
         # Pre-process texture
         preprocessed_texture = self._prepare_texture_for_stereogram(texture_pil, min_sep, max_sep)

@@ -15,10 +15,12 @@ class StereogramGenerator:
                 "texture": ("IMAGE",),
                 "min_separation": ("INT", {"default": 40, "min": 10, "max": 200, "step": 1}),
                 "max_separation": ("INT", {"default": 100, "min": 20, "max": 300, "step": 1}),
-                "algorithm": (["standard", "improved", "layered"], {"default": "layered"}),
+                "algorithm": (["standard", "improved", "layered", "central"], {"default": "layered"}),
+                "reference_type": (["left_to_right", "right_to_left", "center_out", "vertical"], {"default": "left_to_right"}),
             },
             "optional": {
                 "stretch_texture": ("BOOLEAN", {"default": False, "tooltip": "Stretch texture to match depth map size"}),
+                "center_offset": ("INT", {"default": 0, "min": -200, "max": 200, "step": 1, "tooltip": "Offset from center for reference point"}),
             }
         }
 
@@ -27,7 +29,7 @@ class StereogramGenerator:
     FUNCTION = "generate_stereogram"
     CATEGORY = "DeepStereo/Generation"
 
-    def generate_stereogram(self, depth_map, texture, min_separation, max_separation, algorithm, stretch_texture=False):
+    def generate_stereogram(self, depth_map, texture, min_separation, max_separation, algorithm, reference_type="left_to_right", stretch_texture=False, center_offset=0):
         if min_separation >= max_separation:
             raise ValueError("min_separation must be less than max_separation")
         
@@ -47,15 +49,27 @@ class StereogramGenerator:
         if stretch_texture and texture_pil.size != depth_pil.size:
             texture_pil = texture_pil.resize(depth_pil.size, Image.Resampling.LANCZOS)
         
-        # Generate stereogram based on algorithm choice
-        if algorithm == "standard":
+        # Generate stereogram based on algorithm and reference type
+        if reference_type == "center_out":
+            result_pil = self._generate_from_center(depth_pil, texture_pil, min_separation, max_separation, center_offset)
+        elif reference_type == "right_to_left":
+            # Flip the image, generate, then flip back
+            depth_pil = depth_pil.transpose(Image.FLIP_LEFT_RIGHT)
             result_pil = self._generate_standard(depth_pil, texture_pil, min_separation, max_separation)
-        elif algorithm == "improved":
-            result_pil = self._generate_improved(depth_pil, texture_pil, min_separation, max_separation)
-        elif algorithm == "layered":
-            result_pil = self._generate_layered(depth_pil, texture_pil, min_separation, max_separation)
-        else:
-            raise ValueError(f"Unknown algorithm: {algorithm}")
+            result_pil = result_pil.transpose(Image.FLIP_LEFT_RIGHT)
+        elif reference_type == "vertical":
+            result_pil = self._generate_vertical(depth_pil, texture_pil, min_separation, max_separation)
+        else:  # left_to_right
+            if algorithm == "standard":
+                result_pil = self._generate_standard(depth_pil, texture_pil, min_separation, max_separation)
+            elif algorithm == "improved":
+                result_pil = self._generate_improved(depth_pil, texture_pil, min_separation, max_separation)
+            elif algorithm == "layered":
+                result_pil = self._generate_layered(depth_pil, texture_pil, min_separation, max_separation)
+            elif algorithm == "central":
+                result_pil = self._generate_central_pattern(depth_pil, texture_pil, min_separation, max_separation)
+            else:
+                raise ValueError(f"Unknown algorithm: {algorithm}")
         
         # Convert back to ComfyUI tensor
         result_np = np.array(result_pil)
@@ -86,6 +100,128 @@ class StereogramGenerator:
                     output_pixels[x, y] = texture_pixels[tx, ty]
                 else:
                     ref_x = x - current_separation
+                    output_pixels[x, y] = output_pixels[ref_x, y]
+        
+        return stereogram_img
+
+    def _generate_from_center(self, depth_map_pil, texture_pil, min_sep, max_sep, center_offset=0):
+        """Generate stereogram from center outwards"""
+        width, height = depth_map_pil.size
+        texture_width, texture_height = texture_pil.size
+        stereogram_img = Image.new('RGB', (width, height))
+        
+        depth_pixels = depth_map_pil.load()
+        texture_pixels = texture_pil.load()
+        output_pixels = stereogram_img.load()
+
+        # Calculate center point
+        center_x = width // 2 + center_offset
+        
+        # Initialize center strip with texture
+        for y in range(height):
+            for x in range(max(0, center_x - max_sep), min(width, center_x + max_sep)):
+                tx = x % texture_width
+                ty = y % texture_height
+                output_pixels[x, y] = texture_pixels[tx, ty]
+        
+        # Generate left side
+        for y in range(height):
+            for x in range(center_x - max_sep - 1, -1, -1):
+                depth_value_normalized = depth_pixels[x, y] / 255.0
+                current_separation = int(min_sep + (max_sep - min_sep) * depth_value_normalized)
+                ref_x = x + current_separation
+                if ref_x < width:
+                    output_pixels[x, y] = output_pixels[ref_x, y]
+                else:
+                    tx = x % texture_width
+                    ty = y % texture_height
+                    output_pixels[x, y] = texture_pixels[tx, ty]
+        
+        # Generate right side
+        for y in range(height):
+            for x in range(center_x + max_sep, width):
+                depth_value_normalized = depth_pixels[x, y] / 255.0
+                current_separation = int(min_sep + (max_sep - min_sep) * depth_value_normalized)
+                ref_x = x - current_separation
+                if ref_x >= 0:
+                    output_pixels[x, y] = output_pixels[ref_x, y]
+                else:
+                    tx = x % texture_width
+                    ty = y % texture_height
+                    output_pixels[x, y] = texture_pixels[tx, ty]
+        
+        return stereogram_img
+
+    def _generate_vertical(self, depth_map_pil, texture_pil, min_sep, max_sep):
+        """Generate stereogram using vertical parallax"""
+        width, height = depth_map_pil.size
+        texture_width, texture_height = texture_pil.size
+        stereogram_img = Image.new('RGB', (width, height))
+        
+        depth_pixels = depth_map_pil.load()
+        texture_pixels = texture_pil.load()
+        output_pixels = stereogram_img.load()
+
+        # Initialize top strip
+        for x in range(width):
+            for y in range(max_sep):
+                tx = x % texture_width
+                ty = y % texture_height
+                output_pixels[x, y] = texture_pixels[tx, ty]
+        
+        # Generate rest of image
+        for x in range(width):
+            for y in range(max_sep, height):
+                depth_value_normalized = depth_pixels[x, y] / 255.0
+                current_separation = int(min_sep + (max_sep - min_sep) * depth_value_normalized)
+                ref_y = y - current_separation
+                if ref_y >= 0:
+                    output_pixels[x, y] = output_pixels[x, ref_y]
+                else:
+                    tx = x % texture_width
+                    ty = y % texture_height
+                    output_pixels[x, y] = texture_pixels[tx, ty]
+        
+        return stereogram_img
+
+    def _generate_central_pattern(self, depth_map_pil, texture_pil, min_sep, max_sep):
+        """Generate stereogram with a central pattern focus"""
+        width, height = depth_map_pil.size
+        texture_width, texture_height = texture_pil.size
+        stereogram_img = Image.new('RGB', (width, height))
+        
+        depth_pixels = depth_map_pil.load()
+        texture_pixels = texture_pil.load()
+        output_pixels = stereogram_img.load()
+
+        # Create a central pattern region
+        center_x = width // 2
+        pattern_width = max_sep * 2
+        
+        # Initialize with unique patterns in the center
+        for y in range(height):
+            for x in range(max(0, center_x - pattern_width), min(width, center_x + pattern_width)):
+                # Create more varied pattern in center
+                tx = ((x * 17 + y * 13) % texture_width + x // 4) % texture_width
+                ty = ((y * 19 + x * 11) % texture_height + y // 4) % texture_height
+                output_pixels[x, y] = texture_pixels[tx, ty]
+        
+        # Generate outwards from center
+        for y in range(height):
+            # Left side
+            for x in range(center_x - pattern_width - 1, -1, -1):
+                depth_value_normalized = depth_pixels[x, y] / 255.0
+                current_separation = int(min_sep + (max_sep - min_sep) * depth_value_normalized)
+                ref_x = x + current_separation
+                if ref_x < width:
+                    output_pixels[x, y] = output_pixels[ref_x, y]
+                
+            # Right side
+            for x in range(center_x + pattern_width, width):
+                depth_value_normalized = depth_pixels[x, y] / 255.0
+                current_separation = int(min_sep + (max_sep - min_sep) * depth_value_normalized)
+                ref_x = x - current_separation
+                if ref_x >= 0:
                     output_pixels[x, y] = output_pixels[ref_x, y]
         
         return stereogram_img

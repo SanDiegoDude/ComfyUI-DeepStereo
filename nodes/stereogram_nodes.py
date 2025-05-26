@@ -13,13 +13,13 @@ class StereogramGenerator:
             "required": {
                 "depth_map": ("IMAGE",),
                 "texture": ("IMAGE",),
-                "min_separation": ("INT", {"default": 40, "min": 10, "max": 200, "step": 1}),
+                "min_separation": ("INT", {"default": 30, "min": 10, "max": 200, "step": 1}),
                 "max_separation": ("INT", {"default": 100, "min": 20, "max": 300, "step": 1}),
-                "algorithm": (["standard", "improved", "layered", "central"], {"default": "layered"}),
-                "reference_type": (["left_to_right", "right_to_left", "center_out"], {"default": "left_to_right"}),
-                "depth_layers": ("INT", {"default": 0, "min": 0, "max": 50, "step": 1, 
+                "algorithm": (["standard", "improved", "layered", "central"], {"default": "central"}),
+                "reference_type": (["left_to_right", "right_to_left", "center_out"], {"default": "center_out"}),
+                "depth_layers": ("INT", {"default": 50, "min": 0, "max": 50, "step": 1, 
                     "tooltip": "Number of distinct depth layers (0 for continuous)"}),
-                "layer_smoothing": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01,
+                "layer_smoothing": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01,
                     "tooltip": "Amount of smoothing between layers"}),
             },
             "optional": {
@@ -236,7 +236,8 @@ class StereogramGenerator:
         # Generate rest of image
         for x in range(width):
             for y in range(max_sep, height):
-                depth_value_normalized = depth_pixels[x, y] / 255.0
+                raw_depth = depth_pixels[x, y] / 255.0
+                depth_value_normalized = self._process_depth_value(raw_depth, depth_layers, layer_smoothing)
                 current_separation = int(min_sep + (max_sep - min_sep) * depth_value_normalized)
                 ref_y = y - current_separation
                 if ref_y >= 0:
@@ -392,9 +393,13 @@ class RandomDotStereogramGenerator:
         return {
             "required": {
                 "depth_map": ("IMAGE",),
-                "min_separation": ("INT", {"default": 40, "min": 10, "max": 200, "step": 1}),
+                "min_separation": ("INT", {"default": 30, "min": 10, "max": 200, "step": 1}),
                 "max_separation": ("INT", {"default": 100, "min": 20, "max": 300, "step": 1}),
                 "dot_density": ("FLOAT", {"default": 0.5, "min": 0.1, "max": 1.0, "step": 0.05}),
+                "depth_layers": ("INT", {"default": 50, "min": 0, "max": 50, "step": 1, 
+                    "tooltip": "Number of distinct depth layers (0 for continuous)"}),
+                "layer_smoothing": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01,
+                    "tooltip": "Amount of smoothing between layers"}),
             },
             "optional": {
                 "background_color": ("STRING", {"default": "#808080", "tooltip": "Hex color for background"}),
@@ -408,7 +413,7 @@ class RandomDotStereogramGenerator:
     CATEGORY = "DeepStereo/Generation"
 
     def generate_rds(self, depth_map, min_separation, max_separation, dot_density, 
-                    background_color="#808080", random_seed=0):
+                    depth_layers=0, layer_smoothing=0.5, background_color="#808080", random_seed=0):
         if min_separation >= max_separation:
             raise ValueError("min_separation must be less than max_separation")
         

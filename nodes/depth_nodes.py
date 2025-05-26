@@ -19,19 +19,32 @@ class MiDaSDepthEstimator:
             "required": {
                 "image": ("IMAGE",),
                 "model_type": (["MiDaS_small", "DPT_Large", "DPT_Hybrid"], {"default": "MiDaS_small"}),
-                "invert_depth": ("BOOLEAN", {"default": False}),
             },
             "optional": {
-                "target_width": ("INT", {"default": 0, "min": 0, "max": 2048, "step": 32, 
-                                       "tooltip": "Target width for processing (0 = use original size, rounded to 32px)"}),
-                "depth_boost": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 3.0, "step": 0.1,
-                                        "tooltip": "Multiply depth values for stronger effect"}),
-                "depth_offset": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.05,
-                                         "tooltip": "Add offset to depth values"}),
-                "gamma_correction": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 3.0, "step": 0.1,
-                                             "tooltip": "Gamma correction for depth map"}),
-                "blur_depth": ("INT", {"default": 0, "min": 0, "max": 20, "step": 1,
-                                     "tooltip": "Blur radius for smoothing depth map"}),
+                # Processing options
+                "process_width": ("INT", {"default": 0, "min": 0, "max": 2048, "step": 32, 
+                                       "tooltip": "Width for processing (0 = use original size)"}),
+                "invert_depth": ("BOOLEAN", {"default": False, "tooltip": "Invert depth values"}),
+                
+                # Depth adjustments
+                "contrast": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 3.0, "step": 0.1,
+                                   "tooltip": "Adjust depth map contrast"}),
+                "brightness": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.05,
+                                     "tooltip": "Adjust depth map brightness"}),
+                "gamma": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 3.0, "step": 0.1,
+                                "tooltip": "Gamma correction"}),
+                
+                # Range control
+                "depth_min": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01,
+                                    "tooltip": "Minimum depth value"}),
+                "depth_max": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01,
+                                    "tooltip": "Maximum depth value"}),
+                
+                # Post-processing
+                "blur_radius": ("INT", {"default": 0, "min": 0, "max": 20, "step": 1,
+                                    "tooltip": "Blur radius for smoothing"}),
+                "normalize_depth": ("BOOLEAN", {"default": True, 
+                                           "tooltip": "Normalize depth to full range after adjustments"}),
             }
         }
 
@@ -78,8 +91,9 @@ class MiDaSDepthEstimator:
             print(f"Error loading MiDaS model: {e}")
             raise
 
-    def estimate_depth(self, image, model_type, invert_depth, target_width=0, 
-                      depth_boost=1.0, depth_offset=0.0, gamma_correction=1.0, blur_depth=0):
+    def estimate_depth(self, image, model_type, invert_depth=False, process_width=0, 
+                      contrast=1.0, brightness=0.0, gamma=1.0, depth_min=0.0, depth_max=1.0,
+                      blur_radius=0, normalize_depth=True):
         # Load model if needed
         self.load_model(model_type)
         
@@ -94,14 +108,14 @@ class MiDaSDepthEstimator:
         original_size = img_pil.size
         processing_image = img_pil.copy()
         
-        # Handle target width resizing
-        if target_width > 0:
+        # Handle processing width resizing
+        if process_width > 0:
             aspect_ratio = img_pil.height / img_pil.width
-            target_width_rounded = (target_width // 32) * 32
-            target_height_rounded = (int(target_width_rounded * aspect_ratio) // 32) * 32
+            process_width_rounded = (process_width // 32) * 32
+            process_height_rounded = (int(process_width_rounded * aspect_ratio) // 32) * 32
             
-            if target_width_rounded > 0 and target_height_rounded > 0:
-                processing_image = img_pil.resize((target_width_rounded, target_height_rounded), Image.Resampling.LANCZOS)
+            if process_width_rounded > 0 and process_height_rounded > 0:
+                processing_image = img_pil.resize((process_width_rounded, process_height_rounded), Image.Resampling.LANCZOS)
                 print(f"Resized for MiDaS processing: {original_size} -> {processing_image.size}")
         
         # Convert to OpenCV format for MiDaS
@@ -120,39 +134,47 @@ class MiDaSDepthEstimator:
                 align_corners=False
             ).squeeze()
         
-        # Process depth output
+        # Get depth output and normalize
         depth_output = prediction.cpu().numpy()
-        depth_min, depth_max = np.min(depth_output), np.max(depth_output)
+        orig_min, orig_max = np.min(depth_output), np.max(depth_output)
         
-        if depth_max > depth_min:
-            depth_normalized = (depth_output - depth_min) / (depth_max - depth_min)
+        if orig_max > orig_min:
+            depth_normalized = (depth_output - orig_min) / (orig_max - orig_min)
         else:
             depth_normalized = np.zeros_like(depth_output)
         
         # MiDaS outputs inverse depth, so we flip it to get normal depth
-        processed_depth_normalized = 1.0 - depth_normalized
+        processed_depth = 1.0 - depth_normalized
         
-        # Apply depth processing
-        if depth_offset != 0.0:
-            processed_depth_normalized = np.clip(processed_depth_normalized + depth_offset, 0.0, 1.0)
+        # Apply contrast adjustment
+        if contrast != 1.0:
+            processed_depth = np.clip((processed_depth - 0.5) * contrast + 0.5, 0.0, 1.0)
         
-        if depth_boost != 1.0:
-            processed_depth_normalized = np.clip(processed_depth_normalized * depth_boost, 0.0, 1.0)
+        # Apply brightness adjustment
+        if brightness != 0.0:
+            processed_depth = np.clip(processed_depth + brightness, 0.0, 1.0)
         
-        if gamma_correction != 1.0:
-            processed_depth_normalized = np.power(processed_depth_normalized, gamma_correction)
+        # Apply gamma correction
+        if gamma != 1.0:
+            processed_depth = np.power(processed_depth, gamma)
+        
+        # Apply depth range limits
+        if depth_min > 0.0 or depth_max < 1.0:
+            processed_depth = np.clip(processed_depth, depth_min, depth_max)
+            if normalize_depth and depth_max > depth_min:
+                processed_depth = (processed_depth - depth_min) / (depth_max - depth_min)
         
         if invert_depth:
-            processed_depth_normalized = 1.0 - processed_depth_normalized
+            processed_depth = 1.0 - processed_depth
         
         # Convert to 8-bit grayscale
-        depth_map_visual = (processed_depth_normalized * 255).astype(np.uint8)
+        depth_map_visual = (processed_depth * 255).astype(np.uint8)
         depth_map_pil = Image.fromarray(depth_map_visual, 'L')
         
         # Apply blur if requested
-        if blur_depth > 0:
+        if blur_radius > 0:
             from PIL import ImageFilter
-            depth_map_pil = depth_map_pil.filter(ImageFilter.GaussianBlur(radius=blur_depth))
+            depth_map_pil = depth_map_pil.filter(ImageFilter.GaussianBlur(radius=blur_radius))
         
         # Resize back to original size if we resized for processing
         if depth_map_pil.size != original_size:

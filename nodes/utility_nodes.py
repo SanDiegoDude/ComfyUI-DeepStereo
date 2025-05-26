@@ -305,23 +305,43 @@ class DepthMapProcessor:
 
 
 class RandomNoiseGenerator:
-    """Generate random noise textures"""
+    """Generate random noise textures with seamless tiling for stereograms"""
     
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "width": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 1}),
-                "height": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 1}),
-                "noise_type": (["rgb", "grayscale", "colored_dots", "perlin"], {"default": "rgb"}),
+                "output_width": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 1,
+                                     "tooltip": "Width of final output image"}),
+                "output_height": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 1,
+                                      "tooltip": "Height of final output image"}),
+                "pattern_width": ("INT", {"default": 100, "min": 30, "max": 200, "step": 1,
+                                      "tooltip": "Width of the actual pattern (should match max_separation)"}),
+                "noise_type": ([
+                    "rgb", "grayscale", "colored_dots", "perlin",
+                    "voronoi", "kaleidoscope", "waves", "cellular",
+                    "fractal", "spiral", "interference", "crystalline"
+                ], {"default": "rgb"}),
             },
             "optional": {
-                "random_seed": ("INT", {"default": 0, "min": 0, "max": 999999, "step": 1, "tooltip": "0 for random seed"}),
+                "random_seed": ("INT", {"default": 0, "min": 0, "max": 999999, "step": 1, 
+                                   "tooltip": "0 for random seed"}),
                 "dot_density": ("FLOAT", {"default": 0.5, "min": 0.1, "max": 1.0, "step": 0.05, 
-                                        "tooltip": "For colored_dots type"}),
-                "base_color": ("STRING", {"default": "#808080", "tooltip": "Background color for colored_dots"}),
+                                     "tooltip": "For colored_dots type"}),
+                "base_color": ("STRING", {"default": "#808080", 
+                                     "tooltip": "Background color for colored_dots"}),
                 "noise_scale": ("FLOAT", {"default": 0.1, "min": 0.01, "max": 1.0, "step": 0.01, 
-                                        "tooltip": "For perlin noise"}),
+                                     "tooltip": "Scale of the noise pattern"}),
+                "frequency": ("FLOAT", {"default": 5.0, "min": 0.1, "max": 50.0, "step": 0.1,
+                                   "tooltip": "Frequency of the pattern"}),
+                "octaves": ("INT", {"default": 4, "min": 1, "max": 8, "step": 1,
+                                "tooltip": "Number of noise layers (for fractal patterns)"}),
+                "color_variation": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05,
+                                         "tooltip": "Amount of color variation"}),
+                "symmetry": ("INT", {"default": 6, "min": 2, "max": 16, "step": 1,
+                                "tooltip": "Symmetry points for kaleidoscope"}),
+                "seamless_tiling": ("BOOLEAN", {"default": True,
+                                           "tooltip": "Create seamlessly tiling pattern"}),
             }
         }
 
@@ -330,17 +350,235 @@ class RandomNoiseGenerator:
     FUNCTION = "generate_noise"
     CATEGORY = "DeepStereo/Utility"
 
-    def generate_noise(self, width, height, noise_type, random_seed=0, dot_density=0.5, 
-                      base_color="#808080", noise_scale=0.1):
+    def generate_noise(self, output_width, output_height, pattern_width, noise_type, 
+                      random_seed=0, dot_density=0.5, base_color="#808080", 
+                      noise_scale=0.1, frequency=5.0, octaves=4,
+                      color_variation=1.0, symmetry=6, seamless_tiling=True):
         
+        def apply_color_variation(pattern, c, phase_shift=0):
+            """Apply color variation to a pattern"""
+            if len(pattern.shape) == 2:
+                shifted = np.roll(pattern, int(phase_shift * pattern_width/8), axis=1)
+                return shifted
+            return pattern[:,:,c]
+
+        def create_seamless_tile(pattern, blend_width=None):
+            """Create a seamless tileable version of the pattern"""
+            if not blend_width:
+                blend_width = pattern_width // 4
+            
+            h, w = pattern.shape[:2]
+            result = pattern.copy()
+            
+            # Horizontal blending
+            for x in range(blend_width):
+                alpha = x / blend_width
+                result[:, x] = pattern[:, x] * alpha + pattern[:, -blend_width + x] * (1 - alpha)
+                result[:, -blend_width + x] = pattern[:, -blend_width + x] * (1 - alpha) + pattern[:, x] * alpha
+            
+            # Vertical blending
+            for y in range(blend_width):
+                alpha = y / blend_width
+                result[y, :] = pattern[y, :] * alpha + pattern[-blend_width + y, :] * (1 - alpha)
+                result[-blend_width + y, :] = pattern[-blend_width + y, :] * (1 - alpha) + pattern[y, :] * alpha
+            
+            return result
+
+        def tile_pattern(pattern):
+            """Tile pattern across the output dimensions"""
+            h, w = pattern.shape[:2]
+            tiles_y = (output_height + h - 1) // h
+            tiles_x = (output_width + w - 1) // w
+            
+            # Create tiled image
+            tiled = np.tile(pattern, (tiles_y, tiles_x, 1) if len(pattern.shape) == 3 else (tiles_y, tiles_x))
+            
+            # Crop to output size
+            return tiled[:output_height, :output_width]
+
         # Set random seed if specified
         if random_seed > 0:
             random.seed(random_seed)
             np.random.seed(random_seed)
+
+        # Initialize coordinates for pattern generation
+        y_coords, x_coords = np.mgrid[0:pattern_width, 0:pattern_width]
+        
+        # Generate base pattern
+        if noise_type == "rgb":
+            pattern = np.random.randint(0, 256, (pattern_width, pattern_width, 3), dtype=np.uint8)
+            
+        elif noise_type == "grayscale":
+            pattern = np.random.randint(0, 256, (pattern_width, pattern_width), dtype=np.uint8)
+            pattern = np.stack([pattern] * 3, axis=-1)
+            
+        elif noise_type == "colored_dots":
+            try:
+                if not base_color.startswith('#'):
+                    base_color = '#' + base_color
+                from PIL import ImageColor
+                bg_rgb = ImageColor.getrgb(base_color)
+            except:
+                bg_rgb = (128, 128, 128)
+            
+            pattern = np.full((pattern_width, pattern_width, 3), bg_rgb, dtype=np.uint8)
+            num_dots = int(pattern_width * pattern_width * dot_density)
+            
+            for _ in range(num_dots):
+                x = random.randint(0, pattern_width - 1)
+                y = random.randint(0, pattern_width - 1)
+                color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+                pattern[y, x] = color
+                
+        elif noise_type in ["perlin", "fractal"]:
+            pattern = np.zeros((pattern_width, pattern_width, 3), dtype=np.uint8)
+            
+            for octave in range(octaves):
+                freq = (2 ** octave) * noise_scale * frequency
+                amplitude = 1.0 / (2 ** octave)
+                
+                if noise_type == "fractal":
+                    # More complex fractal pattern
+                    angle = np.arctan2(y_coords - pattern_width/2, x_coords - pattern_width/2)
+                    dist = np.sqrt((x_coords - pattern_width/2)**2 + (y_coords - pattern_width/2)**2)
+                    noise_octave = np.sin(dist * freq * 0.1 + angle * octaves)
+                    noise_octave *= np.cos(x_coords * freq * 0.05) * np.sin(y_coords * freq * 0.05)
+                else:
+                    # Enhanced Perlin-like noise
+                    noise_octave = np.sin(x_coords * freq * 0.1) * np.cos(y_coords * freq * 0.1)
+                    noise_octave += np.sin((x_coords + y_coords) * freq * 0.07)
+                
+                noise_octave = (noise_octave * amplitude * 255).astype(np.uint8)
+                
+                for c in range(3):
+                    phase = c * 2 * np.pi / 3 * color_variation
+                    colored_noise = apply_color_variation(noise_octave, c, phase)
+                    pattern[:, :, c] = np.clip(pattern[:, :, c] + colored_noise, 0, 255)
+                    
+        elif noise_type == "kaleidoscope":
+            center_y, center_x = pattern_width // 2, pattern_width // 2
+            r = np.sqrt((x_coords - center_x)**2 + (y_coords - center_y)**2)
+            theta = np.arctan2(y_coords - center_y, x_coords - center_x)
+            
+            angle_segment = 2 * np.pi / symmetry
+            theta_mod = (theta % angle_segment) / angle_segment * 2 * np.pi
+            
+            base_pattern = np.sin(r * noise_scale + theta_mod * frequency)
+            base_pattern = (base_pattern * 128 + 128).astype(np.uint8)
+            
+            pattern = np.zeros((pattern_width, pattern_width, 3), dtype=np.uint8)
+            for c in range(3):
+                pattern[:, :, c] = apply_color_variation(base_pattern, c, c * color_variation)
+                
+        elif noise_type == "waves":
+            pattern = np.zeros((pattern_width, pattern_width, 3), dtype=np.uint8)
+            for wave in range(octaves):
+                angle = wave * np.pi / octaves
+                wave_x = np.cos(angle) * x_coords + np.sin(angle) * y_coords
+                wave_pattern = np.sin(wave_x * frequency * noise_scale)
+                wave_pattern = (wave_pattern * 128 + 128).astype(np.uint8)
+                
+                for c in range(3):
+                    phase = (c * 2 * np.pi / 3 + wave) * color_variation
+                    pattern[:, :, c] = np.clip(
+                        pattern[:, :, c] + apply_color_variation(wave_pattern, c, phase),
+                        0, 255
+                    )
+                    
+        elif noise_type in ["voronoi", "cellular"]:
+            # Generate random points for both Voronoi and cellular patterns
+            num_points = int(20 * noise_scale)
+            points = np.random.rand(num_points, 2)
+            point_colors = np.random.randint(0, 256, (num_points, 3))
+            x_norm, y_norm = x_coords / pattern_width, y_coords / pattern_width
+            
+            # Calculate distances to all points
+            distances = np.zeros((len(points), pattern_width, pattern_width))
+            for i, (px, py) in enumerate(points):
+                distances[i] = np.sqrt((x_norm - px)**2 + (y_norm - py)**2)
+            
+            if noise_type == "voronoi":
+                # For Voronoi, use nearest point's color
+                nearest_point = distances.argmin(axis=0)
+                pattern = np.zeros((pattern_width, pattern_width, 3), dtype=np.uint8)
+                for c in range(3):
+                    pattern[:, :, c] = point_colors[nearest_point, c]
+            else:  # cellular
+                # For cellular, use difference between nearest and second nearest
+                distances.sort(axis=0)
+                base_pattern = (distances[1] - distances[0]) * 255
+                
+                pattern = np.zeros((pattern_width, pattern_width, 3), dtype=np.uint8)
+                for c in range(3):
+                    pattern[:, :, c] = apply_color_variation(base_pattern, c, c * color_variation)
+                
+        elif noise_type == "spiral":
+            center_y, center_x = pattern_width // 2, pattern_width // 2
+            r = np.sqrt((x_coords - center_x)**2 + (y_coords - center_y)**2)
+            theta = np.arctan2(y_coords - center_y, x_coords - center_x)
+            
+            base_pattern = np.sin(r * noise_scale + theta * frequency)
+            base_pattern = (base_pattern * 128 + 128).astype(np.uint8)
+            
+            pattern = np.zeros((pattern_width, pattern_width, 3), dtype=np.uint8)
+            for c in range(3):
+                pattern[:, :, c] = apply_color_variation(base_pattern, c, c * color_variation)
+                
+        elif noise_type == "interference":
+            center1_x, center1_y = pattern_width * 0.3, pattern_width * 0.3
+            center2_x, center2_y = pattern_width * 0.7, pattern_width * 0.7
+            
+            r1 = np.sqrt((x_coords - center1_x)**2 + (y_coords - center1_y)**2)
+            r2 = np.sqrt((x_coords - center2_x)**2 + (y_coords - center2_y)**2)
+            
+            base_pattern = np.sin(r1 * frequency * noise_scale) * np.sin(r2 * frequency * noise_scale)
+            base_pattern = (base_pattern * 128 + 128).astype(np.uint8)
+            
+            pattern = np.zeros((pattern_width, pattern_width, 3), dtype=np.uint8)
+            for c in range(3):
+                pattern[:, :, c] = apply_color_variation(base_pattern, c, c * color_variation)
+                
+        elif noise_type == "crystalline":
+            pattern = np.zeros((pattern_width, pattern_width, 3), dtype=np.uint8)
+            
+            for crystal in range(octaves):
+                angle = crystal * np.pi / octaves
+                transformed_x = np.cos(angle) * x_coords + np.sin(angle) * y_coords
+                transformed_y = -np.sin(angle) * x_coords + np.cos(angle) * y_coords
+                
+                base_pattern = np.abs(np.sin(transformed_x * frequency * noise_scale) * 
+                                    np.cos(transformed_y * frequency * noise_scale))
+                base_pattern = (base_pattern * 255).astype(np.uint8)
+                
+                for c in range(3):
+                    phase = (c * 2 * np.pi / 3 + crystal) * color_variation
+                    pattern[:, :, c] = np.clip(
+                        pattern[:, :, c] + apply_color_variation(base_pattern, c, phase),
+                        0, 255
+                    )
+        
+        # Apply seamless tiling if requested
+        if seamless_tiling:
+            pattern = create_seamless_tile(pattern)
+        
+        # Tile the pattern to final size
+        noise_data = tile_pattern(pattern)
+        
+        # Convert to ComfyUI tensor
+        result_tensor = torch.from_numpy(noise_data).float() / 255.0
+        result_tensor = result_tensor.unsqueeze(0)
+        
+        return (result_tensor,)
         
         if noise_type == "rgb":
-            # Random RGB noise
-            noise_data = np.random.randint(0, 256, (height, width, 3), dtype=np.uint8)
+            # Generate base pattern
+            pattern = np.random.randint(0, 256, (current_height, current_width, 3), dtype=np.uint8)
+            
+            if seamless_tiling:
+                pattern = create_seamless_tile(pattern)
+            
+            # Tile the pattern
+            noise_data = tile_pattern(pattern)
             
         elif noise_type == "grayscale":
             # Random grayscale noise
@@ -366,23 +604,158 @@ class RandomNoiseGenerator:
                 color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
                 noise_data[y, x] = color
                 
-        elif noise_type == "perlin":
-            # Simple pseudo-perlin noise
+        elif noise_type in ["perlin", "fractal"]:
             noise_data = np.zeros((height, width, 3), dtype=np.uint8)
+            y_coords, x_coords = np.mgrid[0:height, 0:width]
             
-            # Generate multiple octaves of noise
-            for octave in range(4):
-                freq = (2 ** octave) * noise_scale
+            for octave in range(octaves):
+                freq = (2 ** octave) * noise_scale * frequency
                 amplitude = 1.0 / (2 ** octave)
                 
-                # Simple noise generation (not true Perlin, but effective)
-                y_coords, x_coords = np.mgrid[0:height, 0:width]
-                noise_octave = np.sin(x_coords * freq * 0.1) * np.cos(y_coords * freq * 0.1)
-                noise_octave += np.random.random((height, width)) * 0.5
+                if noise_type == "fractal":
+                    # More complex fractal pattern
+                    angle = np.arctan2(y_coords - height/2, x_coords - width/2)
+                    dist = np.sqrt((x_coords - width/2)**2 + (y_coords - height/2)**2)
+                    noise_octave = np.sin(dist * freq * 0.1 + angle * octaves)
+                    noise_octave *= np.cos(x_coords * freq * 0.05) * np.sin(y_coords * freq * 0.05)
+                else:
+                    # Enhanced Perlin-like noise
+                    noise_octave = np.sin(x_coords * freq * 0.1) * np.cos(y_coords * freq * 0.1)
+                    noise_octave += np.sin((x_coords + y_coords) * freq * 0.07)
+                
                 noise_octave = (noise_octave * amplitude * 255).astype(np.uint8)
                 
                 for c in range(3):
-                    noise_data[:, :, c] = np.clip(noise_data[:, :, c] + noise_octave, 0, 255)
+                    phase = c * 2 * np.pi / 3 * color_variation
+                    colored_noise = np.roll(noise_octave, int(phase * width/8), axis=1)
+                    noise_data[:, :, c] = np.clip(noise_data[:, :, c] + colored_noise, 0, 255)
+        
+        elif noise_type == "voronoi":
+            # Generate Voronoi-like pattern
+            points = np.random.rand(int(20 * noise_scale), 2)
+            y_coords, x_coords = np.mgrid[0:height, 0:width]
+            y_norm, x_norm = y_coords / height, x_coords / width
+            
+            noise_data = np.zeros((height, width, 3), dtype=np.uint8)
+            for i, (px, py) in enumerate(points):
+                dist = np.sqrt((x_norm - px)**2 + (y_norm - py)**2)
+                color = np.random.randint(0, 255, 3)
+                for c in range(3):
+                    mask = dist == dist.min(axis=None)
+                    noise_data[:, :, c] = np.where(mask, color[c], noise_data[:, :, c])
+        
+        elif noise_type == "kaleidoscope":
+            # Generate kaleidoscope pattern
+            center_y, center_x = height // 2, width // 2
+            y_coords, x_coords = np.mgrid[0:height, 0:width]
+            
+            # Convert to polar coordinates
+            r = np.sqrt((x_coords - center_x)**2 + (y_coords - center_y)**2)
+            theta = np.arctan2(y_coords - center_y, x_coords - center_x)
+            
+            # Create kaleidoscope effect
+            angle_segment = 2 * np.pi / symmetry
+            theta_mod = (theta % angle_segment) / angle_segment * 2 * np.pi
+            
+            # Generate base pattern
+            pattern = np.sin(r * noise_scale + theta_mod * frequency)
+            pattern = (pattern * 128 + 128).astype(np.uint8)
+            
+            noise_data = np.zeros((height, width, 3), dtype=np.uint8)
+            for c in range(3):
+                phase = c * 2 * np.pi / 3 * color_variation
+                noise_data[:, :, c] = np.roll(pattern, int(phase * width/8), axis=1)
+        
+        elif noise_type == "waves":
+            # Generate wave interference pattern
+            y_coords, x_coords = np.mgrid[0:height, 0:width]
+            noise_data = np.zeros((height, width, 3), dtype=np.uint8)
+            
+            for wave in range(octaves):
+                angle = wave * np.pi / octaves
+                wave_x = np.cos(angle) * x_coords + np.sin(angle) * y_coords
+                wave_pattern = np.sin(wave_x * frequency * noise_scale)
+                wave_pattern = (wave_pattern * 128 + 128).astype(np.uint8)
+                
+                for c in range(3):
+                    phase = c * 2 * np.pi / 3 * color_variation
+                    noise_data[:, :, c] = np.clip(
+                        noise_data[:, :, c] + np.roll(wave_pattern, int(phase * width/8), axis=1),
+                        0, 255
+                    )
+        
+        elif noise_type == "cellular":
+            # Generate cellular/organic pattern
+            noise_data = np.zeros((height, width, 3), dtype=np.uint8)
+            points = np.random.rand(int(30 * noise_scale), 2)
+            y_coords, x_coords = np.mgrid[0:height, 0:width]
+            y_norm, x_norm = y_coords / height, x_coords / width
+            
+            distances = np.zeros((len(points), height, width))
+            for i, (px, py) in enumerate(points):
+                distances[i] = np.sqrt((x_norm - px)**2 + (y_norm - py)**2)
+            
+            # Sort distances for each pixel
+            distances.sort(axis=0)
+            pattern = (distances[1] - distances[0]) * 255  # Difference between closest and second closest
+            
+            for c in range(3):
+                phase = c * 2 * np.pi / 3 * color_variation
+                noise_data[:, :, c] = np.roll(pattern, int(phase * width/8), axis=1).astype(np.uint8)
+        
+        elif noise_type == "spiral":
+            # Generate spiral pattern
+            center_y, center_x = height // 2, width // 2
+            y_coords, x_coords = np.mgrid[0:height, 0:width]
+            
+            r = np.sqrt((x_coords - center_x)**2 + (y_coords - center_y)**2)
+            theta = np.arctan2(y_coords - center_y, x_coords - center_x)
+            
+            spiral = np.sin(r * noise_scale + theta * frequency)
+            spiral = (spiral * 128 + 128).astype(np.uint8)
+            
+            noise_data = np.zeros((height, width, 3), dtype=np.uint8)
+            for c in range(3):
+                phase = c * 2 * np.pi / 3 * color_variation
+                noise_data[:, :, c] = np.roll(spiral, int(phase * width/8), axis=1)
+        
+        elif noise_type == "interference":
+            # Generate interference pattern
+            y_coords, x_coords = np.mgrid[0:height, 0:width]
+            center1_x, center1_y = width * 0.3, height * 0.3
+            center2_x, center2_y = width * 0.7, height * 0.7
+            
+            r1 = np.sqrt((x_coords - center1_x)**2 + (y_coords - center1_y)**2)
+            r2 = np.sqrt((x_coords - center2_x)**2 + (y_coords - center2_y)**2)
+            
+            pattern = np.sin(r1 * frequency * noise_scale) * np.sin(r2 * frequency * noise_scale)
+            pattern = (pattern * 128 + 128).astype(np.uint8)
+            
+            noise_data = np.zeros((height, width, 3), dtype=np.uint8)
+            for c in range(3):
+                phase = c * 2 * np.pi / 3 * color_variation
+                noise_data[:, :, c] = np.roll(pattern, int(phase * width/8), axis=1)
+        
+        elif noise_type == "crystalline":
+            # Generate crystalline pattern
+            noise_data = np.zeros((height, width, 3), dtype=np.uint8)
+            y_coords, x_coords = np.mgrid[0:height, 0:width]
+            
+            for crystal in range(octaves):
+                angle = crystal * np.pi / octaves
+                transformed_x = np.cos(angle) * x_coords + np.sin(angle) * y_coords
+                transformed_y = -np.sin(angle) * x_coords + np.cos(angle) * y_coords
+                
+                pattern = np.abs(np.sin(transformed_x * frequency * noise_scale) * 
+                               np.cos(transformed_y * frequency * noise_scale))
+                pattern = (pattern * 255).astype(np.uint8)
+                
+                for c in range(3):
+                    phase = (c * 2 * np.pi / 3 + crystal) * color_variation
+                    noise_data[:, :, c] = np.clip(
+                        noise_data[:, :, c] + np.roll(pattern, int(phase * width/8), axis=1),
+                        0, 255
+                    )
         
         else:
             # Fallback to RGB noise

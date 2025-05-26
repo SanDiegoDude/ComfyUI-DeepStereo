@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageChops, ImageColor, ImageEnhance
+from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageChops, ImageColor, ImageEnhance, ImageStat
 import random
 import math
 import os
@@ -345,69 +345,140 @@ class TextureTransformer:
             
             return rotated
             
-class InputToTextureTransformer:
-    """Transform input image to colored/hazy texture effect"""
+class ImageEffectsTransformer:
+    """Advanced image effects and blending transformer"""
     
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "image": ("IMAGE",),
-                "hex_color": ("STRING", {"default": "0000FF", "tooltip": "Hex color (6 digits, # optional)"}),
+                "effect": ([
+                    "sharpen", "blur",
+                    "multiply", "screen", "overlay",
+                    "darken", "lighten",
+                    "color_dodge", "color_burn",
+                    "hard_light", "soft_light",
+                    "difference", "exclusion"
+                ], {"default": "sharpen"}),
+                "strength": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05}),
             },
             "optional": {
-                "darken_amount": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05, 
-                                          "tooltip": "0.0 = no darkening, 1.0 = maximum darkening"}),
-                "blur_radius": ("INT", {"default": 5, "min": 0, "max": 50, "step": 1}),
-                "blend_strength": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05, 
-                                           "tooltip": "Color overlay strength"}),
+                "blend_color": ("STRING", {"default": "#808080", "tooltip": "Hex color for blend modes"}),
+                "preserve_brightness": ("BOOLEAN", {"default": True, "tooltip": "Maintain overall brightness in blend modes"}),
             }
         }
 
     RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("colored_texture",)
-    FUNCTION = "transform_to_texture"
-    CATEGORY = "DeepStereo/Texture"
+    RETURN_NAMES = ("processed_image",)
+    FUNCTION = "process_image"
+    CATEGORY = "DeepStereo/Effects"
 
-    def transform_to_texture(self, image, hex_color, darken_amount=0.0, blur_radius=5, blend_strength=0.5):
+    def process_image(self, image, effect, strength, blend_color="#808080", preserve_brightness=True):
         # Convert ComfyUI tensor to PIL Image
         if len(image.shape) == 4:
             image = image[0]
-        
         img_np = (image.cpu().numpy() * 255).astype(np.uint8)
         img_pil = Image.fromarray(img_np, 'RGB')
         
-        # Parse hex color (accept with or without #)
+        # Parse blend color
         try:
-            hex_clean = hex_color.replace("#", "")
-            if len(hex_clean) == 3:
-                hex_clean = ''.join([c*2 for c in hex_clean])
-            elif len(hex_clean) != 6:
-                hex_clean = "000080"  # Default dark blue
+            blend_color = blend_color.replace("#", "")
+            if len(blend_color) == 3:
+                blend_color = ''.join([c*2 for c in blend_color])
+            if len(blend_color) != 6:
+                blend_color = "808080"
+            color_rgb = tuple(int(blend_color[i:i+2], 16) for i in (0, 2, 4))
+        except:
+            color_rgb = (128, 128, 128)
+        
+        result_img = img_pil
+        
+        if effect == "sharpen":
+            # Use UnsharpMask for more controlled sharpening
+            radius = int(3 + strength * 2)  # 3-5 pixel radius
+            percent = int(100 + strength * 150)  # 100-250% sharpening
+            threshold = 3
+            result_img = img_pil.filter(ImageFilter.UnsharpMask(radius=radius, percent=percent, threshold=threshold))
+        
+        elif effect == "blur":
+            blur_radius = strength * 10  # 0-10 pixel radius
+            result_img = img_pil.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+        
+        else:  # Blend modes
+            color_layer = Image.new('RGB', img_pil.size, color_rgb)
             
-            target_color = tuple(int(hex_clean[i:i+2], 16) for i in (0, 2, 4))
-        except ValueError:
-            print(f"Warning: Invalid hex color '{hex_color}'. Using dark blue.")
-            target_color = (0, 0, 128)
-        
-        # Convert to RGB if needed
-        working_img = img_pil.convert('RGB')
-        
-        # Create a solid color overlay
-        color_overlay = Image.new('RGB', working_img.size, target_color)
-        
-        # Blend using overlay mode
-        result_img = Image.blend(working_img, color_overlay, blend_strength)
-        
-        # Apply darkening if requested (0.0 = no change, 1.0 = maximum darkening)
-        if darken_amount > 0.0:
-            # Convert darken_amount to brightness factor (1.0 = no change, 0.0 = black)
-            brightness_factor = 1.0 - darken_amount
-            result_img = ImageEnhance.Brightness(result_img).enhance(brightness_factor)
-        
-        # Apply blur
-        if blur_radius > 0:
-            result_img = result_img.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+            if effect == "multiply":
+                result_img = ImageChops.multiply(img_pil, color_layer)
+            elif effect == "screen":
+                result_img = ImageChops.screen(img_pil, color_layer)
+            elif effect == "overlay":
+                # Custom overlay implementation
+                img_array = np.array(img_pil)
+                color_array = np.array(color_layer)
+                mask = img_array > 127
+                result_array = np.where(mask,
+                    255 - ((255 - img_array) * (255 - color_array) // 127),
+                    (img_array * color_array) // 127
+                )
+                result_img = Image.fromarray(np.uint8(result_array))
+            elif effect == "darken":
+                result_img = ImageChops.darker(img_pil, color_layer)
+            elif effect == "lighten":
+                result_img = ImageChops.lighter(img_pil, color_layer)
+            elif effect == "color_dodge":
+                # Custom color dodge implementation
+                img_array = np.array(img_pil).astype(float)
+                color_array = np.array(color_layer).astype(float)
+                result_array = np.where(color_array == 255, 255,
+                    np.minimum(255, img_array * 255 / (255 - color_array)))
+                result_img = Image.fromarray(np.uint8(result_array))
+            elif effect == "color_burn":
+                # Custom color burn implementation
+                img_array = np.array(img_pil).astype(float)
+                color_array = np.array(color_layer).astype(float)
+                result_array = np.where(color_array == 0, 0,
+                    255 - np.minimum(255, (255 - img_array) * 255 / color_array))
+                result_img = Image.fromarray(np.uint8(result_array))
+            elif effect == "hard_light":
+                # Custom hard light implementation
+                img_array = np.array(img_pil)
+                color_array = np.array(color_layer)
+                mask = color_array > 127
+                result_array = np.where(mask,
+                    255 - ((255 - img_array) * (255 - 2 * (color_array - 127)) // 255),
+                    (img_array * (2 * color_array)) // 255
+                )
+                result_img = Image.fromarray(np.uint8(result_array))
+            elif effect == "soft_light":
+                # Custom soft light implementation
+                img_array = np.array(img_pil).astype(float)
+                color_array = np.array(color_layer).astype(float)
+                result_array = np.where(color_array > 127,
+                    img_array + (255 - img_array) * (color_array - 127) / 127 * 0.5,
+                    img_array - (img_array * (127 - color_array) / 127 * 0.5)
+                )
+                result_img = Image.fromarray(np.uint8(np.clip(result_array, 0, 255)))
+            elif effect == "difference":
+                result_img = ImageChops.difference(img_pil, color_layer)
+            elif effect == "exclusion":
+                # Custom exclusion implementation
+                img_array = np.array(img_pil).astype(float)
+                color_array = np.array(color_layer).astype(float)
+                result_array = img_array + color_array - 2 * img_array * color_array / 255
+                result_img = Image.fromarray(np.uint8(result_array))
+            
+            # Blend with original if strength < 1
+            if strength < 1:
+                result_img = Image.blend(img_pil, result_img, strength)
+            
+            # Preserve brightness if requested
+            if preserve_brightness and effect not in ["difference", "exclusion"]:
+                orig_brightness = ImageStat.Stat(img_pil).mean[0]
+                new_brightness = ImageStat.Stat(result_img).mean[0]
+                if new_brightness > 0:  # Avoid division by zero
+                    brightness_factor = orig_brightness / new_brightness
+                    result_img = ImageEnhance.Brightness(result_img).enhance(brightness_factor)
         
         # Convert back to ComfyUI tensor
         result_np = np.array(result_img)

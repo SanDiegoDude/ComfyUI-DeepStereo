@@ -6,7 +6,7 @@ except Exception as e:
     print(f"✗ Depth nodes failed: {e}")
 
 try:
-    from .nodes.texture_nodes import ProceduralTextureGenerator, TextureTransformer, InputToTextureTransformer
+    from .nodes.texture_nodes import ProceduralTextureGenerator, TextureTransformer, ImageEffectsTransformer
     print("✓ Texture nodes loaded")
 except Exception as e:
     print(f"✗ Texture nodes failed: {e}")
@@ -34,7 +34,7 @@ NODE_CLASS_MAPPINGS = {
     "MiDaSDepthEstimator": MiDaSDepthEstimator,
     "ProceduralTextureGenerator": ProceduralTextureGenerator,
     "TextureTransformer": TextureTransformer,
-    "InputToTextureTransformer": InputToTextureTransformer,
+    "ImageEffectsTransformer": ImageEffectsTransformer,
     "StereogramGenerator": StereogramGenerator,
     "RandomDotStereogramGenerator": RandomDotStereogramGenerator,
     "ImageResizeAndTransform": ImageResizeAndTransform,
@@ -47,7 +47,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "MiDaSDepthEstimator": "DeepStereo: MiDaS Depth Estimator",
     "ProceduralTextureGenerator": "DeepStereo: Procedural Texture Generator",
     "TextureTransformer": "DeepStereo: Texture Transformer", 
-    "InputToTextureTransformer": "DeepStereo: Input to Texture",
+    "ImageEffectsTransformer": "DeepStereo: Image Effects",
     "StereogramGenerator": "DeepStereo: Stereogram Generator",
     "RandomDotStereogramGenerator": "DeepStereo: Random Dot Stereogram",
     "ImageResizeAndTransform": "DeepStereo: Image Resize and Transform",

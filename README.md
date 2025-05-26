@@ -8,32 +8,93 @@ Transform any image into mesmerizing autostereograms using AI-generated depth ma
 
 ## Features
 
-### 🧠 AI Depth Estimation
-- **MiDaS Integration**: Uses state-of-the-art MiDaS models for depth estimation
-- **Multiple Model Support**: MiDaS_small, DPT_Large, and DPT_Hybrid
-- **Smart Model Management**: Automatically saves models to ComfyUI's controlnet directory
-- **Flexible Processing**: Configurable input resizing and depth map post-processing
+### 🧠 AI Depth Estimation & Processing
+- **Enhanced MiDaS Integration**: State-of-the-art depth estimation with built-in processing
+- **Multiple Models**: MiDaS_small, DPT_Large, and DPT_Hybrid
+- **Smart Model Management**: Automatic model handling in ComfyUI's controlnet directory
+- **Advanced Depth Controls**:
+  - Contrast and brightness adjustment
+  - Gamma correction
+  - Min/Max depth range control
+  - Optional depth normalization
+  - Blur for smoothing
+  - Process width control
 
-### 🎨 Procedural Texture Generation
-- **Method 1**: Content-driven color dots with multiple color modes
-- **Method 2**: Density/size-driven elements based on image content
-- **Method 3**: Voronoi/Worley noise patterns
-- **Method 4**: Stylized glyph dithering
-- **Advanced Blending**: Multiple blend modes for combining texture methods
-- **Input Transformation**: Convert any image into colored/hazy textures
+### 🎨 Pattern & Texture Generation
+- **Procedural Texture Methods**:
+  - Content-driven color dots with multiple modes
+  - Advanced pattern generation with seamless tiling
+  - Optimized for stereogram use
+- **Pattern Width Control**: Matches stereogram separation for optimal results
+- **12 Noise Types**:
+  - RGB: Random color noise
+  - Grayscale: Monochrome noise
+  - Colored Dots: Random dot patterns
+  - Perlin: Enhanced Perlin-like noise
+  - Voronoi: Cell-based patterns
+  - Kaleidoscope: Symmetric radial patterns
+  - Waves: Wave interference patterns
+  - Cellular: Organic cell-like patterns
+  - Fractal: Complex self-similar patterns
+  - Spiral: Spiral-based patterns
+  - Interference: Wave interference effects
+  - Crystalline: Geometric crystal-like patterns
+- **Advanced Pattern Controls**:
+  - Frequency control
+  - Color variation
+  - Multiple octaves
+  - Symmetry points
+  - Seamless tiling
+  - Pattern width optimization
 
-### ✨ Stereogram Generation
-- **Multiple Algorithms**: Standard, improved, and layered generation methods
-- **Random Dot Stereograms**: Traditional RDS without texture dependencies
-- **Texture Preprocessing**: Automatic seamless tiling for better results
-- **Flexible Parameters**: Adjustable separation distances for depth control
+### ✨ Enhanced Stereogram Generation
+- **Multiple Algorithms**: 
+  - Standard: Basic stereogram generation
+  - Improved: Better texture distribution
+  - Layered: Advanced with texture preprocessing
+  - Central: Enhanced pattern variation
+- **Reference Types**:
+  - Left to right
+  - Right to left
+  - Center out (recommended)
+- **Depth Control**:
+  - Up to 50 distinct depth layers
+  - Layer smoothing control
+  - Min/Max separation adjustment
+- **Random Dot Stereograms**: 
+  - Traditional RDS with depth layer support
+  - Customizable dot density
+  - Color control
 
-### 🔧 Utility Nodes
-- **Image Resizing**: Megapixel-based and dimension-based resizing
-- **Depth Map Processing**: Contrast, brightness, blur, and clipping controls
-- **Texture Transformation**: Rotation, grid patterns, color inversion
-- **Random Noise Generation**: Multiple noise types for texture creation
-- **Batch Processing**: Apply operations to multiple images simultaneously
+### 🎨 Image Effects
+- **Enhanced Image Processing**:
+  - Advanced sharpening
+  - Multiple blend modes:
+    - Multiply/Screen
+    - Overlay
+    - Darken/Lighten
+    - Color Dodge/Burn
+    - Hard/Soft Light
+    - Difference/Exclusion
+  - Brightness preservation
+  - Strength control
+  - Color blending
+
+### 🔧 Utility Features
+- **Smart Image Resizing**: 
+  - Megapixel-based
+  - Dimension-based
+  - Aspect ratio preservation
+- **Texture Transformation**:
+  - Rotation with multiple modes
+  - Grid pattern generation
+  - Color inversion
+  - Size control
+- **Color Management**:
+  - RGB sliders
+  - Preset colors
+  - Hex input
+  - Format options
 
 ## Installation
 
@@ -55,42 +116,72 @@ pip install -r requirements.txt
 
 ## Quick Start
 
-### Basic Workflow
-1. **Load Image** → **MiDaS Depth Estimator** → **Depth Map**
-2. **Load Image** → **Procedural Texture Generator** → **Texture**
-3. **Depth Map + Texture** → **Stereogram Generator** → **Magic Eye Image**
+### Recommended Workflow
+1. **Depth Map Creation**:
+   - **Load Image** → **MiDaS Depth Estimator**
+   - Use DPT_Large model for best quality
+   - Adjust contrast, brightness, and depth range
+   - Enable depth normalization for optimal results
 
-### Advanced Workflow
-- Use **Texture Blender** to combine multiple procedural textures
-- Apply **Texture Transformer** for rotation, grids, and effects
-- Use **Depth Map Processor** to fine-tune depth perception
-- Try **Random Dot Stereogram Generator** for classic RDS effects
+2. **Texture Generation** (choose one):
+   - **Random Noise Generator**:
+     - Set pattern_width to match max_separation (default 100)
+     - Try kaleidoscope, crystalline, or interference patterns
+     - Enable seamless tiling
+   - **Procedural Texture Generator**:
+     - Use content-driven patterns
+     - Apply texture transformation if needed
+
+3. **Stereogram Creation**:
+   - Use **Stereogram Generator** with:
+     - Algorithm: "central"
+     - Reference type: "center_out"
+     - Depth layers: 50
+     - Layer smoothing: 1.0
+   - Or try **Random Dot Stereogram Generator** for classic effects
+
+### Advanced Techniques
+- **Pattern Enhancement**:
+  - Use Image Effects for sharper, more defined patterns
+  - Try different blend modes for unique effects
+  - Adjust pattern frequency and color variation
+
+- **Depth Optimization**:
+  - Fine-tune depth layers for desired 3D effect
+  - Use gamma correction for depth emphasis
+  - Apply subtle blur for smoother transitions
+
+- **Texture Tips**:
+  - Avoid blurry or overly complex patterns
+  - Use high contrast for better depth perception
+  - Keep pattern size consistent with separation values
 
 ## Node Categories
 
 ### DeepStereo/Depth
-- **MiDaS Depth Estimator**: AI-powered depth map generation
+- **MiDaS Depth Estimator**: AI-powered depth map generation with integrated processing
 
 ### DeepStereo/Texture
 - **Procedural Texture Generator**: Multi-method texture creation
-- **Texture Transformer**: Apply effects and transformations
-- **Input to Texture**: Convert images to colored textures
+- **Random Noise Generator**: Advanced pattern generation with 12 noise types
+- **Texture Transformer**: Rotation, grid, and transform effects
+
+### DeepStereo/Effects
+- **Image Effects**: Advanced image processing and blending
 
 ### DeepStereo/Generation
-- **Stereogram Generator**: Create textured autostereograms
-- **Random Dot Stereogram**: Generate classic RDS images
+- **Stereogram Generator**: Create sophisticated autostereograms
+  - Multiple algorithms and reference types
+  - Depth layer control
+  - Advanced smoothing
+- **Random Dot Stereogram**: Enhanced RDS generation
+  - Depth layer support
+  - Advanced controls
+  - Color customization
 
 ### DeepStereo/Utility
-- **Image Resizer**: Flexible image resizing options
-- **Depth Map Processor**: Fine-tune depth maps
-- **Random Noise Generator**: Create noise textures
-- **Batch Image Processor**: Process multiple images
-
-### DeepStereo/Advanced Texture
-- **Advanced Texture Method 2**: Density/size-driven patterns
-- **Advanced Texture Method 3**: Voronoi/Worley noise
-- **Texture Blender**: Combine textures with blend modes
-- **Texture Tiler**: Create seamlessly tiling textures
+- **Image Resizer**: Smart dimension control
+- **Color Picker**: Advanced color selection
 
 ## Requirements
 

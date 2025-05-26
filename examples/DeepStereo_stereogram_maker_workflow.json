@@ -1,0 +1,963 @@
+{
+  "id": "779da8df-e387-4d72-9106-af765d1d6fa3",
+  "revision": 0,
+  "last_node_id": 47,
+  "last_link_id": 64,
+  "nodes": [
+    {
+      "id": 42,
+      "type": "ImageEffectsTransformer",
+      "pos": [
+        165.97586059570312,
+        345.1109619140625
+      ],
+      "size": [
+        272.7265625,
+        130
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 55
+        }
+      ],
+      "outputs": [
+        {
+          "name": "processed_image",
+          "type": "IMAGE",
+          "links": [
+            56,
+            64
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "SanDiegoDude/ComfyUI-DeepStereo",
+        "ver": "935b71f90a6b97e6d440945e70df6d503be9ed67",
+        "Node name for S&R": "ImageEffectsTransformer",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "sharpen",
+        0.5,
+        "#808080",
+        true
+      ]
+    },
+    {
+      "id": 25,
+      "type": "PreviewImage",
+      "pos": [
+        945.1237182617188,
+        -468.9340515136719
+      ],
+      "size": [
+        793.9130249023438,
+        642.3839721679688
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 21
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.32",
+        "Node name for S&R": "PreviewImage",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 22,
+      "type": "PreviewImage",
+      "pos": [
+        88.0098876953125,
+        576.3544311523438
+      ],
+      "size": [
+        364,
+        291
+      ],
+      "flags": {},
+      "order": 18,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 64
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.32",
+        "Node name for S&R": "PreviewImage",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 24,
+      "type": "PreviewImage",
+      "pos": [
+        953.8256225585938,
+        267.0827331542969
+      ],
+      "size": [
+        787.1248779296875,
+        639.455810546875
+      ],
+      "flags": {},
+      "order": 19,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 19
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.32",
+        "Node name for S&R": "PreviewImage",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 28,
+      "type": "PreviewImage",
+      "pos": [
+        953.965576171875,
+        1019.909423828125
+      ],
+      "size": [
+        798.8377075195312,
+        635.0634765625
+      ],
+      "flags": {},
+      "order": 16,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 26
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.32",
+        "Node name for S&R": "PreviewImage",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 26,
+      "type": "LoadImage",
+      "pos": [
+        -898.9193115234375,
+        243.39317321777344
+      ],
+      "size": [
+        274.080078125,
+        314.0000305175781
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            47
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.32",
+        "Node name for S&R": "LoadImage",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "0001_2025-05-24-1748119508.png",
+        "image"
+      ]
+    },
+    {
+      "id": 39,
+      "type": "ProceduralTextureGenerator",
+      "pos": [
+        -585.8507690429688,
+        501.0573425292969
+      ],
+      "size": [
+        366.8228454589844,
+        394
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 47
+        }
+      ],
+      "outputs": [
+        {
+          "name": "texture",
+          "type": "IMAGE",
+          "links": [
+            49
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "SanDiegoDude/ComfyUI-DeepStereo",
+        "ver": "c1fa71146612c748091e238c48abc8c53bd17161",
+        "Node name for S&R": "ProceduralTextureGenerator",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        2,
+        "blend",
+        "multiply",
+        0.75,
+        true,
+        1,
+        10,
+        "440088",
+        "random_from_palette",
+        90,
+        true,
+        16,
+        12,
+        "solid",
+        true
+      ]
+    },
+    {
+      "id": 35,
+      "type": "TextureTransformer",
+      "pos": [
+        -185.19943237304688,
+        224.44891357421875
+      ],
+      "size": [
+        307.9107360839844,
+        250
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 49
+        }
+      ],
+      "outputs": [
+        {
+          "name": "transformed_texture",
+          "type": "IMAGE",
+          "links": [
+            55
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "SanDiegoDude/ComfyUI-DeepStereo",
+        "ver": "717354a36bed1e6fa3a1d26fb11044d7c995a967",
+        "Node name for S&R": "TextureTransformer",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        45,
+        "tile",
+        "0088EE",
+        0,
+        0,
+        false,
+        0,
+        0,
+        true
+      ]
+    },
+    {
+      "id": 18,
+      "type": "PreviewImage",
+      "pos": [
+        83.40692138671875,
+        1354.8157958984375
+      ],
+      "size": [
+        364,
+        291
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 54
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.32",
+        "Node name for S&R": "PreviewImage",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 41,
+      "type": "ImageEffectsTransformer",
+      "pos": [
+        94.70348358154297,
+        1083.7098388671875
+      ],
+      "size": [
+        272.7265625,
+        130
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 61
+        }
+      ],
+      "outputs": [
+        {
+          "name": "processed_image",
+          "type": "IMAGE",
+          "links": [
+            54,
+            57
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "SanDiegoDude/ComfyUI-DeepStereo",
+        "ver": "935b71f90a6b97e6d440945e70df6d503be9ed67",
+        "Node name for S&R": "ImageEffectsTransformer",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "darken",
+        0.4000000000000001,
+        "555599",
+        true
+      ]
+    },
+    {
+      "id": 27,
+      "type": "StereogramGenerator",
+      "pos": [
+        539.321533203125,
+        1075.0146484375
+      ],
+      "size": [
+        322.4644470214844,
+        246
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "depth_map",
+          "type": "IMAGE",
+          "link": 60
+        },
+        {
+          "name": "texture",
+          "type": "IMAGE",
+          "link": 57
+        }
+      ],
+      "outputs": [
+        {
+          "name": "stereogram",
+          "type": "IMAGE",
+          "links": [
+            26
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "SanDiegoDude/ComfyUI-DeepStereo",
+        "ver": "1a3bfe5cf9c049bbbf796cedbac8d5d90fe2c67d",
+        "Node name for S&R": "StereogramGenerator",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        30,
+        100,
+        "standard",
+        "center_out",
+        50,
+        1,
+        false,
+        0
+      ]
+    },
+    {
+      "id": 6,
+      "type": "RandomDotStereogramGenerator",
+      "pos": [
+        519.6126708984375,
+        -224.43838500976562
+      ],
+      "size": [
+        338.0230407714844,
+        202
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "depth_map",
+          "type": "IMAGE",
+          "link": 58
+        }
+      ],
+      "outputs": [
+        {
+          "name": "rds_stereogram",
+          "type": "IMAGE",
+          "links": [
+            21
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "SanDiegoDude/ComfyUI-DeepStereo",
+        "ver": "1a3bfe5cf9c049bbbf796cedbac8d5d90fe2c67d",
+        "Node name for S&R": "RandomDotStereogramGenerator",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        30,
+        100,
+        1,
+        50,
+        1,
+        "#808080",
+        0
+      ]
+    },
+    {
+      "id": 5,
+      "type": "StereogramGenerator",
+      "pos": [
+        530.0762329101562,
+        460.62518310546875
+      ],
+      "size": [
+        338.4644470214844,
+        246
+      ],
+      "flags": {},
+      "order": 17,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "depth_map",
+          "type": "IMAGE",
+          "link": 59
+        },
+        {
+          "name": "texture",
+          "type": "IMAGE",
+          "link": 56
+        }
+      ],
+      "outputs": [
+        {
+          "name": "stereogram",
+          "type": "IMAGE",
+          "links": [
+            19
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "SanDiegoDude/ComfyUI-DeepStereo",
+        "ver": "1a3bfe5cf9c049bbbf796cedbac8d5d90fe2c67d",
+        "Node name for S&R": "StereogramGenerator",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        30,
+        100,
+        "central",
+        "center_out",
+        50,
+        1,
+        true,
+        0
+      ]
+    },
+    {
+      "id": 11,
+      "type": "LoadImage",
+      "pos": [
+        -535.7857055664062,
+        -293.6555480957031
+      ],
+      "size": [
+        274.080078125,
+        314
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            1
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.32",
+        "Node name for S&R": "LoadImage",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "pasted/image (3).png",
+        "image"
+      ]
+    },
+    {
+      "id": 12,
+      "type": "PreviewImage",
+      "pos": [
+        88.92005920410156,
+        -239.23831176757812
+      ],
+      "size": [
+        344.0350036621094,
+        280.62701416015625
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 2
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.32",
+        "Node name for S&R": "PreviewImage",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 1,
+      "type": "MiDaSDepthEstimator",
+      "pos": [
+        -249.25198364257812,
+        -597.06689453125
+      ],
+      "size": [
+        328.6646423339844,
+        294
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "depth_map",
+          "type": "IMAGE",
+          "links": [
+            2,
+            58,
+            59,
+            60
+          ]
+        },
+        {
+          "name": "original_image",
+          "type": "IMAGE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "aux_id": "SanDiegoDude/ComfyUI-DeepStereo",
+        "ver": "1a3bfe5cf9c049bbbf796cedbac8d5d90fe2c67d",
+        "Node name for S&R": "MiDaSDepthEstimator",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "DPT_Large",
+        false,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        true
+      ]
+    },
+    {
+      "id": 45,
+      "type": "Note",
+      "pos": [
+        101.671142578125,
+        -602.9978637695312
+      ],
+      "size": [
+        352.500732421875,
+        88
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "depth models are automatically downloaded to ComfyUi/models/controlnet/midas_models/ directory\n"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 46,
+      "type": "Note",
+      "pos": [
+        -547.328857421875,
+        -511.99786376953125
+      ],
+      "size": [
+        286.500732421875,
+        145
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "auto-stereograms work best with larger, frame filling objects or identifiable collections of objects. Fine detail is lost in the effect, so objects or creatures with well known shapes or silhouettes work best."
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 47,
+      "type": "Note",
+      "pos": [
+        -1089.9959716796875,
+        -350.9560852050781
+      ],
+      "size": [
+        462.10198974609375,
+        252.9949188232422
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "What the heck is an autostereogram????",
+      "properties": {},
+      "widgets_values": [
+        "Autostereograms work by exploiting how our eyes create depth perception. They use carefully calculated repeating patterns where the spacing between identical elements varies based on the desired depth. When your eyes focus beyond the image (called \"wall-eyed viewing\"), each eye sees slightly different parts of these repeating patterns. Your brain then fuses these offset patterns together, interpreting the differences in spacing as depth information - just like how your eyes naturally triangulate depth in the real world by seeing slightly different views of the same scene.\n\nDeepStereo uses AI (MiDaS) to generate depth maps from standard images. It creates repeating patterns through several methods including random dots, procedural textures, and noise generation. The software calculates pattern offsets based on the depth information to create the stereogram effect. It includes multiple algorithms for stereogram generation (standard, improved, layered, and central) and offers various pattern types from simple dots to complex procedural textures. The system works as a set of ComfyUI nodes where each step of the process can be adjusted independently."
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 43,
+      "type": "RandomNoiseGenerator",
+      "pos": [
+        -402.4225158691406,
+        1108.78173828125
+      ],
+      "size": [
+        341.9195251464844,
+        346
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "noise_texture",
+          "type": "IMAGE",
+          "links": [
+            61
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "SanDiegoDude/ComfyUI-DeepStereo",
+        "ver": "935b71f90a6b97e6d440945e70df6d503be9ed67",
+        "Node name for S&R": "RandomNoiseGenerator",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        1024,
+        1024,
+        200,
+        "crystalline",
+        0,
+        0.3500000000000001,
+        "408088",
+        0.6000000000000001,
+        3,
+        5,
+        0.3500000000000001,
+        6,
+        true
+      ]
+    }
+  ],
+  "links": [
+    [
+      1,
+      11,
+      0,
+      1,
+      0,
+      "IMAGE"
+    ],
+    [
+      2,
+      1,
+      0,
+      12,
+      0,
+      "IMAGE"
+    ],
+    [
+      19,
+      5,
+      0,
+      24,
+      0,
+      "IMAGE"
+    ],
+    [
+      21,
+      6,
+      0,
+      25,
+      0,
+      "IMAGE"
+    ],
+    [
+      26,
+      27,
+      0,
+      28,
+      0,
+      "IMAGE"
+    ],
+    [
+      47,
+      26,
+      0,
+      39,
+      0,
+      "IMAGE"
+    ],
+    [
+      49,
+      39,
+      0,
+      35,
+      0,
+      "IMAGE"
+    ],
+    [
+      54,
+      41,
+      0,
+      18,
+      0,
+      "IMAGE"
+    ],
+    [
+      55,
+      35,
+      0,
+      42,
+      0,
+      "IMAGE"
+    ],
+    [
+      56,
+      42,
+      0,
+      5,
+      1,
+      "IMAGE"
+    ],
+    [
+      57,
+      41,
+      0,
+      27,
+      1,
+      "IMAGE"
+    ],
+    [
+      58,
+      1,
+      0,
+      6,
+      0,
+      "IMAGE"
+    ],
+    [
+      59,
+      1,
+      0,
+      5,
+      0,
+      "IMAGE"
+    ],
+    [
+      60,
+      1,
+      0,
+      27,
+      0,
+      "IMAGE"
+    ],
+    [
+      61,
+      43,
+      0,
+      41,
+      0,
+      "IMAGE"
+    ],
+    [
+      64,
+      42,
+      0,
+      22,
+      0,
+      "IMAGE"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 2,
+      "title": "Depth Input and Processing",
+      "bounding": [
+        -561.7577514648438,
+        -688.0263061523438,
+        1024.69873046875,
+        763.8553466796875
+      ],
+      "color": "#3f789e",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "id": 3,
+      "title": "Image Texture Transformations",
+      "bounding": [
+        -908.9193115234375,
+        139.57534790039062,
+        1370.92919921875,
+        779.9766235351562
+      ],
+      "color": "#3f789e",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "id": 4,
+      "title": "Procedural Noise Generation",
+      "bounding": [
+        -426.91705322265625,
+        967.540283203125,
+        884.323974609375,
+        688.2755126953125
+      ],
+      "color": "#3f789e",
+      "font_size": 24,
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "ue_links": [],
+    "links_added_by_ue": [],
+    "frontendVersion": "1.18.9",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}

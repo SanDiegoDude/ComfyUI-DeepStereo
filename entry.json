@@ -1,0 +1,16 @@
+{
+    "title": "ComfyUI DeepStereo",
+    "description": "A comprehensive set of nodes for generating AI-powered autostereograms (Like the Magic Eye style images) with procedural texture generation.",
+    "author": "SanDiegoDude",
+    "version": "1.0.0",
+    "repo": "https://github.com/SanDiegoDude/ComfyUI-DeepStereo",
+    "tags": ["autostereogram", "magic eye", "stereogram", "depth", "texture", "3d", "midas"],
+    "install_type": "git-clone",
+    "pip_requirements": ["opencv-python>=4.5.0", "numpy>=1.19.0", "tqdm>=4.50.0"],
+    "min_comfy_version": "1800",
+    "node_category": "DeepStereo",
+    "example_images": [
+        "https://raw.githubusercontent.com/SanDiegoDude/ComfyUI-DeepStereo/main/examples/DeepStereo_Example_workflow_image.png"
+    ],
+    "workflow_example": "https://raw.githubusercontent.com/SanDiegoDude/ComfyUI-DeepStereo/main/examples/DeepStereo_stereogram_maker_workflow.json"
+}

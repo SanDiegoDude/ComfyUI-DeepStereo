@@ -317,72 +317,77 @@ class TextureTransformer:
         elif fill_mode == "crop_to_fit":
             print("DEBUG: Using crop_to_fit mode")
             
-            # Calculate the largest rectangle that fits inside the rotated image
-            # without showing any background fill
             import math
             
             orig_width, orig_height = image.size
             
-            # Convert degrees to radians
+            # Step 1: Rotate with expansion and background fill
+            rotated_with_bg = image.rotate(degrees, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=fill_color_rgb)
+            rotated_width, rotated_height = rotated_with_bg.size
+            
+            print(f"DEBUG: Original: {orig_width}x{orig_height}, Rotated: {rotated_width}x{rotated_height}")
+            
+            # Step 2: Calculate the inscribed rectangle (area with NO background)
+            # This is the largest rectangle that fits inside the original image bounds after rotation
             angle_rad = math.radians(abs(degrees % 360))
             
-            # For a rectangle rotated by angle θ, the largest inscribed rectangle
-            # (that doesn't include any background) has dimensions:
-            # This is based on the "largest rectangle in rotated rectangle" problem
-            
-            if angle_rad == 0:
-                # No rotation, use original size
+            if angle_rad == 0 or angle_rad == math.pi:
+                # No effective rotation
                 inscribed_width = orig_width
                 inscribed_height = orig_height
+            elif angle_rad == math.pi/2 or angle_rad == 3*math.pi/2:
+                # 90 or 270 degree rotation
+                inscribed_width = orig_height
+                inscribed_height = orig_width
             else:
-                # Calculate the inscribed rectangle size
-                # This ensures we never see background fill
+                # For arbitrary angles, calculate the inscribed rectangle
                 cos_a = abs(math.cos(angle_rad))
                 sin_a = abs(math.sin(angle_rad))
                 
-                # The inscribed rectangle dimensions
-                inscribed_width = int((orig_width * cos_a + orig_height * sin_a) / 
-                                    (cos_a**2 + sin_a**2) * cos_a)
-                inscribed_height = int((orig_width * cos_a + orig_height * sin_a) / 
-                                     (cos_a**2 + sin_a**2) * sin_a)
+                # The largest rectangle inscribed in a rotated rectangle
+                # This formula gives us the rectangle that fits entirely within the original bounds
+                w_prime = (orig_width * cos_a - orig_height * sin_a) / (cos_a**2 - sin_a**2) if cos_a**2 != sin_a**2 else 0
+                h_prime = (orig_height * cos_a - orig_width * sin_a) / (cos_a**2 - sin_a**2) if cos_a**2 != sin_a**2 else 0
                 
-                # Make sure we don't exceed original dimensions
-                inscribed_width = min(inscribed_width, orig_width)
-                inscribed_height = min(inscribed_height, orig_height)
+                # Alternative simpler calculation that's more reliable
+                inscribed_width = int(abs(orig_width * cos_a - orig_height * sin_a))
+                inscribed_height = int(abs(orig_height * cos_a - orig_width * sin_a))
+                
+                # Ensure we don't go negative or too large
+                inscribed_width = max(1, min(inscribed_width, rotated_width))
+                inscribed_height = max(1, min(inscribed_height, rotated_height))
             
-            print(f"DEBUG: Original size: {orig_width}x{orig_height}")
-            print(f"DEBUG: Calculated inscribed size: {inscribed_width}x{inscribed_height}")
+            print(f"DEBUG: Calculated inscribed rectangle: {inscribed_width}x{inscribed_height}")
             
-            # Create a larger canvas to work with (to avoid edge artifacts)
-            work_size = max(orig_width, orig_height) * 2
-            work_canvas = Image.new(image.mode, (work_size, work_size))
-            
-            # Paste original image in center of work canvas
-            paste_x = (work_size - orig_width) // 2
-            paste_y = (work_size - orig_height) // 2
-            work_canvas.paste(image, (paste_x, paste_y))
-            
-            # Rotate the work canvas
-            rotated_work = work_canvas.rotate(degrees, resample=Image.Resampling.BICUBIC, expand=False)
-            
-            # Crop the inscribed rectangle from the center
-            center_x = work_size // 2
-            center_y = work_size // 2
+            # Step 3: Crop the inscribed rectangle from the center of the rotated image
+            center_x = rotated_width // 2
+            center_y = rotated_height // 2
             
             crop_left = center_x - inscribed_width // 2
             crop_top = center_y - inscribed_height // 2
             crop_right = crop_left + inscribed_width
             crop_bottom = crop_top + inscribed_height
             
-            cropped_result = rotated_work.crop((crop_left, crop_top, crop_right, crop_bottom))
-            print(f"DEBUG: Cropped result size: {cropped_result.size}")
+            # Make sure crop coordinates are within bounds
+            crop_left = max(0, crop_left)
+            crop_top = max(0, crop_top)
+            crop_right = min(rotated_width, crop_right)
+            crop_bottom = min(rotated_height, crop_bottom)
             
-            # Finally, resize to target dimensions if needed
-            if cropped_result.size != (target_width, target_height):
-                print(f"DEBUG: Resizing cropped result to target {target_width}x{target_height}")
-                cropped_result = cropped_result.resize((target_width, target_height), Image.Resampling.LANCZOS)
+            print(f"DEBUG: Cropping from ({crop_left}, {crop_top}) to ({crop_right}, {crop_bottom})")
             
-            return cropped_result
+            cropped_content = rotated_with_bg.crop((crop_left, crop_top, crop_right, crop_bottom))
+            print(f"DEBUG: Cropped content size: {cropped_content.size}")
+            
+            # Step 4: Scale the cropped content back to target dimensions
+            if cropped_content.size != (target_width, target_height):
+                print(f"DEBUG: Scaling cropped content to target {target_width}x{target_height}")
+                final_result = cropped_content.resize((target_width, target_height), Image.Resampling.LANCZOS)
+            else:
+                final_result = cropped_content
+            
+            print(f"DEBUG: Final crop_to_fit result size: {final_result.size}")
+            return final_result
             
         else:  # black_fill
             print("DEBUG: Using black_fill mode")

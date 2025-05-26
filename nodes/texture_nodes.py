@@ -160,29 +160,33 @@ class TextureTransformer:
         img_np = (image.cpu().numpy() * 255).astype(np.uint8)
         img_pil = Image.fromarray(img_np, 'RGB')
         
-        # Store original dimensions for potential restoration
+        # Store original dimensions
         original_width, original_height = img_pil.size
-        
-        # Determine target dimensions early for rotation
-        if match_input_dimensions:
-            final_target_width, final_target_height = original_width, original_height
-        elif target_width > 0 or target_height > 0:
-            final_target_width = target_width if target_width > 0 else original_width
-            final_target_height = target_height if target_height > 0 else original_height
-        else:
-            final_target_width, final_target_height = original_width, original_height
+        print(f"DEBUG: Original dimensions: {original_width}x{original_height}")
+        print(f"DEBUG: Rotation: {rotate_degrees}°, Fill mode: {rotation_fill_mode}")
+        print(f"DEBUG: Target dimensions: {target_width}x{target_height}")
+        print(f"DEBUG: Match input: {match_input_dimensions}")
         
         transformed_image = img_pil.copy()
         
-        # Apply rotation with smart filling - use final target dimensions
+        # Apply rotation FIRST with smart filling
         if rotate_degrees != 0:
+            # For tile mode, we want to maintain original dimensions
+            if rotation_fill_mode == "tile":
+                target_w, target_h = original_width, original_height
+            else:
+                target_w, target_h = original_width, original_height
+                
+            print(f"DEBUG: Applying rotation with target {target_w}x{target_h}")
             transformed_image = self._apply_smart_rotation(
                 transformed_image, rotate_degrees, rotation_fill_mode, rotation_bg_color,
-                final_target_width, final_target_height
+                target_w, target_h
             )
+            print(f"DEBUG: After rotation: {transformed_image.size}")
         
         # Apply grid transformation
         if grid_rows > 0 and grid_cols > 0:
+            print(f"DEBUG: Applying grid {grid_rows}x{grid_cols}")
             current_width, current_height = transformed_image.size
             cell_width = current_width // grid_cols
             cell_height = current_height // grid_rows
@@ -196,9 +200,11 @@ class TextureTransformer:
                         grid_image.paste(cell_texture, (c * cell_width, r * cell_height))
                 
                 transformed_image = grid_image
+                print(f"DEBUG: After grid: {transformed_image.size}")
         
         # Apply color inversion
         if invert_colors:
+            print("DEBUG: Applying color inversion")
             if transformed_image.mode == 'L':
                 transformed_image = ImageOps.invert(transformed_image)
             elif transformed_image.mode == 'RGB':
@@ -208,11 +214,27 @@ class TextureTransformer:
                 r_inv, g_inv, b_inv = ImageChops.invert(r), ImageChops.invert(g), ImageChops.invert(b)
                 transformed_image = Image.merge('RGBA', (r_inv, g_inv, b_inv, a))
         
-        # Final resize only if rotation didn't already handle it and we need different dimensions
-        current_size = transformed_image.size
-        if current_size != (final_target_width, final_target_height) and rotate_degrees == 0:
-            # Only resize if we didn't rotate (rotation already handled sizing)
-            transformed_image = transformed_image.resize((final_target_width, final_target_height), Image.Resampling.LANCZOS)
+        # Final resizing logic - ONLY if explicitly requested and not handled by rotation
+        need_resize = False
+        final_w, final_h = transformed_image.size
+        
+        if match_input_dimensions and transformed_image.size != (original_width, original_height):
+            final_w, final_h = original_width, original_height
+            need_resize = True
+            print(f"DEBUG: Need resize due to match_input_dimensions: {final_w}x{final_h}")
+        elif (target_width > 0 or target_height > 0) and rotate_degrees == 0:
+            # Only apply target dimensions if we didn't rotate
+            final_w = target_width if target_width > 0 else transformed_image.size[0]
+            final_h = target_height if target_height > 0 else transformed_image.size[1]
+            if (final_w, final_h) != transformed_image.size:
+                need_resize = True
+                print(f"DEBUG: Need resize due to target dimensions: {final_w}x{final_h}")
+        
+        if need_resize:
+            print(f"DEBUG: Resizing from {transformed_image.size} to {final_w}x{final_h}")
+            transformed_image = transformed_image.resize((final_w, final_h), Image.Resampling.LANCZOS)
+        
+        print(f"DEBUG: Final output size: {transformed_image.size}")
         
         # Convert back to ComfyUI tensor
         result_np = np.array(transformed_image)
@@ -237,10 +259,79 @@ class TextureTransformer:
     def _apply_smart_rotation(self, image, degrees, fill_mode, bg_color_hex, target_width, target_height):
         """Apply rotation with various fill strategies"""
         
+        print(f"DEBUG: _apply_smart_rotation called: {degrees}°, {fill_mode}, target {target_width}x{target_height}")
+        
         # Convert hex to RGB for fill color
         fill_color_rgb = self._hex_to_rgb(bg_color_hex)
+        print(f"DEBUG: Fill color: {fill_color_rgb}")
         
-        if fill_mode == "black_fill":
+        if fill_mode == "tile":
+            print("DEBUG: Using tile mode")
+            # Rotate with expansion first
+            rotated_expanded = image.rotate(degrees, resample=Image.Resampling.BICUBIC, expand=True)
+            print(f"DEBUG: Rotated expanded size: {rotated_expanded.size}")
+            
+            # Get dimensions
+            rotated_width, rotated_height = rotated_expanded.size
+            
+            # If the rotated image is larger than target, we can crop from center
+            if rotated_width >= target_width and rotated_height >= target_height:
+                print("DEBUG: Rotated image is larger than target, cropping from center")
+                crop_x = (rotated_width - target_width) // 2
+                crop_y = (rotated_height - target_height) // 2
+                result = rotated_expanded.crop((crop_x, crop_y, crop_x + target_width, crop_y + target_height))
+                print(f"DEBUG: Cropped result size: {result.size}")
+                return result
+            
+            # Otherwise, tile to fill the target dimensions
+            print("DEBUG: Tiling to fill target dimensions")
+            # Calculate how many tiles we need in each direction
+            tiles_x = (target_width // rotated_width) + 2  # +2 for safety margin
+            tiles_y = (target_height // rotated_height) + 2
+            print(f"DEBUG: Need {tiles_x}x{tiles_y} tiles")
+            
+            # Create a larger tiled image
+            tiled_width = tiles_x * rotated_width
+            tiled_height = tiles_y * rotated_height
+            tiled_image = Image.new(image.mode, (tiled_width, tiled_height))
+            print(f"DEBUG: Tiled canvas size: {tiled_width}x{tiled_height}")
+            
+            # Tile the rotated image
+            for tile_y in range(tiles_y):
+                for tile_x in range(tiles_x):
+                    paste_x = tile_x * rotated_width
+                    paste_y = tile_y * rotated_height
+                    tiled_image.paste(rotated_expanded, (paste_x, paste_y))
+            
+            # Calculate center crop coordinates to get target dimensions
+            crop_x = (tiled_width - target_width) // 2
+            crop_y = (tiled_height - target_height) // 2
+            print(f"DEBUG: Cropping from ({crop_x}, {crop_y}) to get {target_width}x{target_height}")
+            
+            # Crop to target size
+            result_canvas = tiled_image.crop((
+                crop_x, 
+                crop_y, 
+                crop_x + target_width, 
+                crop_y + target_height
+            ))
+            
+            print(f"DEBUG: Final tiled result size: {result_canvas.size}")
+            return result_canvas
+            
+        elif fill_mode == "crop_to_fit":
+            print("DEBUG: Using crop_to_fit mode")
+            # Rotate without expanding, keeping original dimensions
+            rotated = image.rotate(degrees, resample=Image.Resampling.BICUBIC, expand=False, fillcolor=fill_color_rgb)
+            
+            # Resize to target if needed
+            if rotated.size != (target_width, target_height):
+                rotated = rotated.resize((target_width, target_height), Image.Resampling.LANCZOS)
+            
+            return rotated
+            
+        else:  # black_fill
+            print("DEBUG: Using black_fill mode")
             # Fill with specified color and resize to target
             fillcolor = fill_color_rgb
             if image.mode == 'RGBA':
@@ -253,70 +344,6 @@ class TextureTransformer:
             if rotated.size != (target_width, target_height):
                 rotated = rotated.resize((target_width, target_height), Image.Resampling.LANCZOS)
             
-            return rotated
-        
-        elif fill_mode == "crop_to_fit":
-            # Rotate without expanding, keeping original dimensions
-            rotated = image.rotate(degrees, resample=Image.Resampling.BICUBIC, expand=False, fillcolor=fill_color_rgb)
-            
-            # Resize to target if needed
-            if rotated.size != (target_width, target_height):
-                rotated = rotated.resize((target_width, target_height), Image.Resampling.LANCZOS)
-            
-            return rotated
-        
-        elif fill_mode == "tile":
-            # Rotate with expansion, then tile to fill target dimensions
-            
-            # First, rotate with expansion
-            rotated_expanded = image.rotate(degrees, resample=Image.Resampling.BICUBIC, expand=True)
-            
-            # Get dimensions
-            rotated_width, rotated_height = rotated_expanded.size
-            
-            # If the rotated image is larger than target, we can crop from center
-            if rotated_width >= target_width and rotated_height >= target_height:
-                crop_x = (rotated_width - target_width) // 2
-                crop_y = (rotated_height - target_height) // 2
-                return rotated_expanded.crop((crop_x, crop_y, crop_x + target_width, crop_y + target_height))
-            
-            # Otherwise, tile to fill the target dimensions
-            # Calculate how many tiles we need in each direction
-            tiles_x = (target_width // rotated_width) + 2  # +2 for safety margin
-            tiles_y = (target_height // rotated_height) + 2
-            
-            # Create a larger tiled image
-            tiled_width = tiles_x * rotated_width
-            tiled_height = tiles_y * rotated_height
-            tiled_image = Image.new(image.mode, (tiled_width, tiled_height))
-            
-            # Tile the rotated image
-            for tile_y in range(tiles_y):
-                for tile_x in range(tiles_x):
-                    paste_x = tile_x * rotated_width
-                    paste_y = tile_y * rotated_height
-                    tiled_image.paste(rotated_expanded, (paste_x, paste_y))
-            
-            # Calculate center crop coordinates to get target dimensions
-            crop_x = (tiled_width - target_width) // 2
-            crop_y = (tiled_height - target_height) // 2
-            
-            # Crop to target size
-            result_canvas = tiled_image.crop((
-                crop_x, 
-                crop_y, 
-                crop_x + target_width, 
-                crop_y + target_height
-            ))
-            
-            return result_canvas
-        
-        else:
-            # Fallback to color fill
-            fillcolor = fill_color_rgb
-            rotated = image.rotate(degrees, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=fillcolor)
-            if rotated.size != (target_width, target_height):
-                rotated = rotated.resize((target_width, target_height), Image.Resampling.LANCZOS)
             return rotated
 
 

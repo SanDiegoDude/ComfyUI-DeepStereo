@@ -267,57 +267,53 @@ class TextureTransformer:
         
         if fill_mode == "tile":
             print("DEBUG: Using tile mode")
-            # Rotate with expansion first
-            rotated_expanded = image.rotate(degrees, resample=Image.Resampling.BICUBIC, expand=True)
-            print(f"DEBUG: Rotated expanded size: {rotated_expanded.size}")
             
-            # Get dimensions
-            rotated_width, rotated_height = rotated_expanded.size
+            # FOR TILE MODE: We need to create a larger canvas BEFORE rotation to avoid any black fill
+            # Calculate how big we need the canvas to be to avoid black after rotation
+            import math
             
-            # If the rotated image is larger than target, we can crop from center
-            if rotated_width >= target_width and rotated_height >= target_height:
-                print("DEBUG: Rotated image is larger than target, cropping from center")
-                crop_x = (rotated_width - target_width) // 2
-                crop_y = (rotated_height - target_height) // 2
-                result = rotated_expanded.crop((crop_x, crop_y, crop_x + target_width, crop_y + target_height))
-                print(f"DEBUG: Cropped result size: {result.size}")
-                return result
+            # For a 45-degree rotation (worst case), we need sqrt(2) times the dimensions
+            diagonal_factor = math.sqrt(2)
+            safe_size = max(target_width, target_height)
+            pre_rotation_size = int(safe_size * diagonal_factor * 1.5)  # Extra safety margin
             
-            # Otherwise, tile to fill the target dimensions
-            print("DEBUG: Tiling to fill target dimensions")
-            # Calculate how many tiles we need in each direction
-            tiles_x = (target_width // rotated_width) + 2  # +2 for safety margin
-            tiles_y = (target_height // rotated_height) + 2
-            print(f"DEBUG: Need {tiles_x}x{tiles_y} tiles")
+            print(f"DEBUG: Creating pre-rotation canvas of size {pre_rotation_size}x{pre_rotation_size}")
             
-            # Create a larger tiled image
-            tiled_width = tiles_x * rotated_width
-            tiled_height = tiles_y * rotated_height
-            tiled_image = Image.new(image.mode, (tiled_width, tiled_height))
-            print(f"DEBUG: Tiled canvas size: {tiled_width}x{tiled_height}")
+            # Create a larger canvas and tile the original image on it
+            large_canvas = Image.new(image.mode, (pre_rotation_size, pre_rotation_size))
             
-            # Tile the rotated image
+            # Calculate how many tiles we need
+            orig_width, orig_height = image.size
+            tiles_x = (pre_rotation_size // orig_width) + 2
+            tiles_y = (pre_rotation_size // orig_height) + 2
+            
+            print(f"DEBUG: Pre-rotation tiling: {tiles_x}x{tiles_y} tiles of {orig_width}x{orig_height}")
+            
+            # Tile the original image across the large canvas
             for tile_y in range(tiles_y):
                 for tile_x in range(tiles_x):
-                    paste_x = tile_x * rotated_width
-                    paste_y = tile_y * rotated_height
-                    tiled_image.paste(rotated_expanded, (paste_x, paste_y))
+                    paste_x = tile_x * orig_width
+                    paste_y = tile_y * orig_height
+                    if paste_x < pre_rotation_size and paste_y < pre_rotation_size:
+                        large_canvas.paste(image, (paste_x, paste_y))
             
-            # Calculate center crop coordinates to get target dimensions
-            crop_x = (tiled_width - target_width) // 2
-            crop_y = (tiled_height - target_height) // 2
-            print(f"DEBUG: Cropping from ({crop_x}, {crop_y}) to get {target_width}x{target_height}")
+            # Now rotate the large tiled canvas - no black fill needed!
+            rotated_large = large_canvas.rotate(degrees, resample=Image.Resampling.BICUBIC, expand=False)
+            print(f"DEBUG: Rotated large canvas size: {rotated_large.size}")
             
-            # Crop to target size
-            result_canvas = tiled_image.crop((
-                crop_x, 
+            # Crop from center to get target dimensions
+            crop_x = (pre_rotation_size - target_width) // 2
+            crop_y = (pre_rotation_size - target_height) // 2
+            
+            result = rotated_large.crop((
+                crop_x,
                 crop_y, 
-                crop_x + target_width, 
+                crop_x + target_width,
                 crop_y + target_height
             ))
             
-            print(f"DEBUG: Final tiled result size: {result_canvas.size}")
-            return result_canvas
+            print(f"DEBUG: Final tiled result size: {result.size}")
+            return result
             
         elif fill_mode == "crop_to_fit":
             print("DEBUG: Using crop_to_fit mode")

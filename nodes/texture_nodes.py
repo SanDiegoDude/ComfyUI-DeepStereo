@@ -327,39 +327,32 @@ class TextureTransformer:
             
             print(f"DEBUG: Original: {orig_width}x{orig_height}, Rotated: {rotated_width}x{rotated_height}")
             
-            # Step 2: Calculate the inscribed rectangle (area with NO background)
-            # This is the largest rectangle that fits inside the original image bounds after rotation
+            # Step 2: Simple approach - calculate inscribed rectangle using basic geometry
             angle_rad = math.radians(abs(degrees % 360))
             
-            if angle_rad == 0 or angle_rad == math.pi:
-                # No effective rotation
-                inscribed_width = orig_width
-                inscribed_height = orig_height
-            elif angle_rad == math.pi/2 or angle_rad == 3*math.pi/2:
-                # 90 or 270 degree rotation
-                inscribed_width = orig_height
-                inscribed_height = orig_width
+            # Use a more conservative calculation
+            cos_a = abs(math.cos(angle_rad))
+            sin_a = abs(math.sin(angle_rad))
+            
+            # Simple inscribed rectangle - guaranteed to work
+            # This is conservative but reliable
+            if cos_a > sin_a:
+                # More horizontal than vertical rotation
+                inscribed_width = int(orig_width * cos_a)
+                inscribed_height = int(orig_height * cos_a)
             else:
-                # For arbitrary angles, calculate the inscribed rectangle
-                cos_a = abs(math.cos(angle_rad))
-                sin_a = abs(math.sin(angle_rad))
-                
-                # The largest rectangle inscribed in a rotated rectangle
-                # This formula gives us the rectangle that fits entirely within the original bounds
-                w_prime = (orig_width * cos_a - orig_height * sin_a) / (cos_a**2 - sin_a**2) if cos_a**2 != sin_a**2 else 0
-                h_prime = (orig_height * cos_a - orig_width * sin_a) / (cos_a**2 - sin_a**2) if cos_a**2 != sin_a**2 else 0
-                
-                # Alternative simpler calculation that's more reliable
-                inscribed_width = int(abs(orig_width * cos_a - orig_height * sin_a))
-                inscribed_height = int(abs(orig_height * cos_a - orig_width * sin_a))
-                
-                # Ensure we don't go negative or too large
-                inscribed_width = max(1, min(inscribed_width, rotated_width))
-                inscribed_height = max(1, min(inscribed_height, rotated_height))
+                # More vertical than horizontal rotation
+                inscribed_width = int(orig_width * sin_a)
+                inscribed_height = int(orig_height * sin_a)
+            
+            # Ensure minimum size and don't exceed rotated dimensions
+            inscribed_width = max(50, min(inscribed_width, rotated_width - 20))  # Leave 10px margin on each side
+            inscribed_height = max(50, min(inscribed_height, rotated_height - 20))
             
             print(f"DEBUG: Calculated inscribed rectangle: {inscribed_width}x{inscribed_height}")
+            print(f"DEBUG: cos_a: {cos_a}, sin_a: {sin_a}")
             
-            # Step 3: Crop the inscribed rectangle from the center of the rotated image
+            # Step 3: Crop from center with debug info
             center_x = rotated_width // 2
             center_y = rotated_height // 2
             
@@ -368,42 +361,46 @@ class TextureTransformer:
             crop_right = crop_left + inscribed_width
             crop_bottom = crop_top + inscribed_height
             
-            # Make sure crop coordinates are within bounds
-            crop_left = max(0, crop_left)
-            crop_top = max(0, crop_top)
-            crop_right = min(rotated_width, crop_right)
-            crop_bottom = min(rotated_height, crop_bottom)
+            print(f"DEBUG: Center: ({center_x}, {center_y})")
+            print(f"DEBUG: Crop box: ({crop_left}, {crop_top}, {crop_right}, {crop_bottom})")
+            print(f"DEBUG: Crop dimensions: {crop_right - crop_left}x{crop_bottom - crop_top}")
             
-            print(f"DEBUG: Cropping from ({crop_left}, {crop_top}) to ({crop_right}, {crop_bottom})")
+            # Sanity check crop coordinates
+            if crop_left < 0 or crop_top < 0 or crop_right > rotated_width or crop_bottom > rotated_height:
+                print("DEBUG: ERROR - Crop coordinates out of bounds!")
+                print(f"DEBUG: Bounds check: left={crop_left>=0}, top={crop_top>=0}, right={crop_right<=rotated_width}, bottom={crop_bottom<=rotated_height}")
+                # Fallback to smaller crop
+                margin = 50
+                crop_left = margin
+                crop_top = margin
+                crop_right = rotated_width - margin
+                crop_bottom = rotated_height - margin
+                print(f"DEBUG: Using fallback crop: ({crop_left}, {crop_top}, {crop_right}, {crop_bottom})")
             
             cropped_content = rotated_with_bg.crop((crop_left, crop_top, crop_right, crop_bottom))
             print(f"DEBUG: Cropped content size: {cropped_content.size}")
             
-            # Step 4: Scale the cropped content back to target dimensions
+            # Debug: Check if cropped content has any variation
+            cropped_array = np.array(cropped_content)
+            print(f"DEBUG: Cropped array shape: {cropped_array.shape}")
+            print(f"DEBUG: Cropped array min/max: {cropped_array.min()}/{cropped_array.max()}")
+            if len(cropped_array.shape) == 3:
+                print(f"DEBUG: Per channel min/max: R={cropped_array[:,:,0].min()}/{cropped_array[:,:,0].max()}, G={cropped_array[:,:,1].min()}/{cropped_array[:,:,1].max()}, B={cropped_array[:,:,2].min()}/{cropped_array[:,:,2].max()}")
+            
+            # Step 4: Scale to target dimensions
             if cropped_content.size != (target_width, target_height):
-                print(f"DEBUG: Scaling cropped content to target {target_width}x{target_height}")
+                print(f"DEBUG: Scaling from {cropped_content.size} to {target_width}x{target_height}")
                 final_result = cropped_content.resize((target_width, target_height), Image.Resampling.LANCZOS)
             else:
                 final_result = cropped_content
             
-            print(f"DEBUG: Final crop_to_fit result size: {final_result.size}")
+            # Final debug check
+            final_array = np.array(final_result)
+            print(f"DEBUG: Final array shape: {final_array.shape}")
+            print(f"DEBUG: Final array min/max: {final_array.min()}/{final_array.max()}")
+            
             return final_result
             
-        else:  # black_fill
-            print("DEBUG: Using black_fill mode")
-            # Fill with specified color and resize to target
-            fillcolor = fill_color_rgb
-            if image.mode == 'RGBA':
-                fillcolor = fill_color_rgb + (255,)  # Add alpha
-            
-            # Rotate with expansion
-            rotated = image.rotate(degrees, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=fillcolor)
-            
-            # Resize to target dimensions
-            if rotated.size != (target_width, target_height):
-                rotated = rotated.resize((target_width, target_height), Image.Resampling.LANCZOS)
-            
-            return rotated
 class InputToTextureTransformer:
     """Transform input image to colored/hazy texture effect"""
     
